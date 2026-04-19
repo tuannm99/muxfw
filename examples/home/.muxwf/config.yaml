@@ -1,0 +1,6 @@
+rules:
+  - cwd_regex: ".*/pythonproject$"
+    on_restore: "source .venv/bin/activate"
+
+  - cwd_regex: ".*/frontend$"
+    on_restore: "pnpm install"

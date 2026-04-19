@@ -1,0 +1,19 @@
+name: sample-app
+session: sample-app
+root: ~/dev/sample-app
+windows:
+  - name: main
+    cwd: ~/dev/sample-app
+    panes: 2
+  - name: logs
+    cwd: ~/dev/sample-app
+on_restore: ""
+tags:
+  - demo
+  - rust
+group: demo
+favorite: true
+description: Sample application workspace
+last_opened_at: "2026-04-19T09:00:00Z"
+created_at: "2026-04-19T08:00:00Z"
+updated_at: "2026-04-19T09:00:00Z"

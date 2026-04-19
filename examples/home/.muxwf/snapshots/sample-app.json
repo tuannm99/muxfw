@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "work_name": "sample-app",
+  "session_name": "sample-app",
+  "active_window_index": 0,
+  "windows": [
+    {
+      "index": 0,
+      "name": "main",
+      "layout": "even-horizontal",
+      "active_pane_index": 0,
+      "pane_count": 2,
+      "panes": [
+        {
+          "index": 0,
+          "cwd": "/home/example/dev/sample-app"
+        },
+        {
+          "index": 1,
+          "cwd": "/home/example/dev/sample-app"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "name": "logs",
+      "active_pane_index": 0,
+      "pane_count": 1,
+      "panes": [
+        {
+          "index": 0,
+          "cwd": "/home/example/dev/sample-app"
+        }
+      ]
+    }
+  ]
+}

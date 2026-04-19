@@ -1,0 +1,7 @@
+name: k
+binary: kubectl
+aliases:
+  pods: "get pods -A"
+  po: "get pods -A"
+  logs: "logs -f {{arg1}}"
+  ctx: "config current-context"
