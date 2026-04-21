@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use directories::BaseDirs;
 use std::env;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -98,13 +100,31 @@ impl AppPaths {
 pub fn find_binary(binary: &str) -> Option<PathBuf> {
     if binary.contains(std::path::MAIN_SEPARATOR) {
         let path = PathBuf::from(binary);
-        return path.is_file().then_some(path);
+        return is_executable_file(&path).then_some(path);
     }
 
     let path_var = env::var_os("PATH")?;
     env::split_paths(&path_var)
         .map(|path| path.join(binary))
-        .find(|path| path.is_file())
+        .find(|path| is_executable_file(path))
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        path.metadata()
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 pub fn is_yaml_file(path: &Path) -> bool {
@@ -112,4 +132,26 @@ pub fn is_yaml_file(path: &Path) -> bool {
         path.extension().and_then(|ext| ext.to_str()),
         Some("yaml" | "yml")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn find_binary_ignores_non_executable_files() {
+        let dir = std::env::temp_dir().join(format!("muxwf-paths-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("tool");
+        fs::write(&file, "#!/bin/sh\n").unwrap();
+
+        #[cfg(unix)]
+        {
+            assert!(!is_executable_file(&file));
+        }
+
+        fs::remove_file(file).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
 }

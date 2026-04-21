@@ -1,4 +1,6 @@
+mod autocomplete;
 mod cli;
+mod discover;
 mod paths;
 mod plugin;
 mod restore;
@@ -9,8 +11,8 @@ mod work;
 mod workspace;
 
 use crate::cli::{
-    Cli, Commands, CreateWorkArgs, InitArgs, ListArgs, SaveArgs, UpdateWorkArgs, WorkCommands,
-    WorkspaceCommands,
+    AddArgs, Cli, Commands, CreateWorkArgs, InitArgs, ListArgs, SaveArgs, UpdateWorkArgs,
+    WorkCommands, WorkspaceCommands,
 };
 use crate::paths::{AppPaths, find_binary};
 use crate::work::Work;
@@ -53,8 +55,11 @@ fn run() -> Result<i32> {
         }
         Commands::Restore(target) => {
             tmux::ensure_tmux_installed()?;
-            let work = work::load_work(&paths, &target.name)?;
-            restore::restore_work(&paths, &work, true)?;
+            let mut work = work::load_work(&paths, &target.name)?;
+            restore::restore_work(&paths, &work, false)?;
+            work.mark_opened_now();
+            work::write_work(&paths, &work)?;
+            restore::open_work(&paths, &work)?;
             Ok(0)
         }
         Commands::Open(target) => {
@@ -93,11 +98,14 @@ fn run() -> Result<i32> {
             run_jump(&paths)?;
             Ok(0)
         }
+        Commands::Completion(args) => {
+            autocomplete::print_completion(args.shell, Some(args.name));
+            Ok(0)
+        }
         Commands::Init(args) => {
+            tmux::ensure_tmux_installed()?;
             paths.ensure_state_dirs()?;
-            let edit = args.edit;
-            let work = build_init_work(args)?;
-            create_work(&paths, work, edit)?;
+            init_from_running_sessions(&paths, args)?;
             Ok(0)
         }
         Commands::Work { command } => run_work_command(&paths, command),
@@ -112,9 +120,7 @@ fn run() -> Result<i32> {
         }
         Commands::Add(args) => {
             paths.ensure_state_dirs()?;
-            let edit = args.edit;
-            let work = build_created_work(args)?;
-            create_work(&paths, work, edit)?;
+            run_add_command(&paths, args)?;
             Ok(0)
         }
         Commands::Edit(target) => {
@@ -225,26 +231,125 @@ fn build_created_work(args: CreateWorkArgs) -> Result<Work> {
     Ok(work)
 }
 
-fn build_init_work(args: InitArgs) -> Result<Work> {
-    let cwd = std::env::current_dir().context("failed to read current directory")?;
-    let default_name = cwd
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(work::sanitize_name)
-        .filter(|name| !name.is_empty())
-        .context("could not infer a work name from the current directory; pass one explicitly")?;
-    let name = args.name.unwrap_or(default_name);
-    let session = args.session.unwrap_or_else(|| name.clone());
-    let mut work = Work::new(name, session, cwd.display().to_string());
-    if let Some(on_restore) = args.on_restore {
-        work.on_restore = Some(on_restore);
+fn create_work_args_from_add(args: AddArgs) -> CreateWorkArgs {
+    CreateWorkArgs {
+        name: args.target,
+        session: args.session,
+        root: args.root,
+        on_restore: args.on_restore,
+        description: args.description,
+        group: args.group,
+        tags: args.tags,
+        favorite: args.favorite,
+        edit: args.edit,
     }
-    work.description = args.description;
-    work.group = args.group;
-    work.tags = args.tags;
-    work.favorite = args.favorite;
-    work.validate()?;
-    Ok(work)
+}
+
+fn run_add_command(paths: &AppPaths, args: AddArgs) -> Result<()> {
+    if args.target != "current" {
+        if args.name.is_some() {
+            bail!("--name is only valid with `muxwf add current`");
+        }
+        let edit = args.edit;
+        let work = build_created_work(create_work_args_from_add(args))?;
+        return create_work(paths, work, edit);
+    }
+
+    discover::ensure_session_option_absent(&args.session)?;
+    tmux::ensure_tmux_installed()?;
+    let session = tmux::current_session_name()?;
+    let snapshot = tmux::capture_session(&session)?;
+    let work = discover::work_from_snapshot(
+        &snapshot,
+        args.name.clone(),
+        args.root.clone(),
+        discover::apply_add_args_metadata(&args),
+    )
+    .with_context(|| format!("failed to generate work config from session '{}'", session))?;
+    create_discovered_work(paths, work, &snapshot, args.edit, false).map(|_| ())
+}
+
+fn init_from_running_sessions(paths: &AppPaths, args: InitArgs) -> Result<()> {
+    let sessions = tmux::list_sessions()?;
+    if sessions.is_empty() {
+        bail!("no running tmux sessions found");
+    }
+
+    let mut created = 0usize;
+    let mut skipped = 0usize;
+    for session in sessions {
+        let snapshot = tmux::capture_session(&session)
+            .with_context(|| format!("failed to capture tmux session '{}'", session))?;
+        let work =
+            discover::work_from_snapshot(&snapshot, None, None, discover::WorkMetadata::default())
+                .with_context(|| {
+                    format!("failed to generate work config from session '{}'", session)
+                })?;
+        if create_discovered_work(paths, work, &snapshot, false, args.overwrite)? {
+            created += 1;
+        } else {
+            skipped += 1;
+        }
+    }
+
+    println!("init complete: {created} created, {skipped} skipped");
+    Ok(())
+}
+
+fn create_discovered_work(
+    paths: &AppPaths,
+    work: Work,
+    snapshot: &snapshot::Snapshot,
+    edit: bool,
+    overwrite: bool,
+) -> Result<bool> {
+    let work_path = paths.work_file(&work.name);
+    let snapshot_path = paths.snapshot_file(&work.name);
+
+    let write_work = overwrite || !work_path.exists();
+    let write_snapshot = overwrite || !snapshot_path.exists();
+
+    if !write_work && !write_snapshot {
+        println!(
+            "skipped '{}' ({}) because config or snapshot already exists",
+            work.name, work.session
+        );
+        return Ok(false);
+    }
+
+    if write_work {
+        work::write_work(paths, &work)?;
+        println!(
+            "created '{}' from tmux session '{}' at {}",
+            work.name,
+            work.session,
+            paths.display_path(&work_path)
+        );
+    } else {
+        println!(
+            "kept existing work config '{}'",
+            paths.display_path(&work_path)
+        );
+    }
+
+    if write_snapshot {
+        snapshot::write_snapshot(paths, &work.name, snapshot)?;
+        println!(
+            "saved snapshot for '{}' to {}",
+            work.name,
+            paths.display_path(&snapshot_path)
+        );
+    } else {
+        println!(
+            "kept existing snapshot '{}'",
+            paths.display_path(&snapshot_path)
+        );
+    }
+
+    if edit && write_work {
+        edit_path(&work_path)?;
+    }
+    Ok(true)
 }
 
 fn create_work(paths: &AppPaths, work: Work, edit: bool) -> Result<()> {
@@ -321,7 +426,7 @@ fn edit_path(path: &Path) -> Result<()> {
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
     let status = Command::new("sh")
         .arg("-lc")
-        .arg("exec \"$EDITOR\" \"$1\"")
+        .arg("exec ${EDITOR:-vi} \"$@\"")
         .arg("muxwf-editor")
         .arg(path)
         .env("EDITOR", editor)

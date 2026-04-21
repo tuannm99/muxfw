@@ -1,6 +1,6 @@
-# muxwf
+# mw
 
-`muxwf` is a small tmux workflow manager for personal daily use. Version 2 keeps the v1 save/restore/open flow and adds metadata, filtering, favorites, recent works, live-session discovery, and workspace bundles for larger project sets.
+`mw` is the short command for `muxwf`, a small tmux workflow manager for personal daily use. Version 2 keeps the v1 save/restore/open flow and adds metadata, filtering, favorites, recent works, live-session discovery, and workspace bundles for larger project sets.
 
 The design goal is deterministic behavior that is easy to debug. It is intentionally not a full `tmux-resurrect` replacement.
 
@@ -26,9 +26,14 @@ Verified locally:
 - `cargo test`
 - `cargo clippy -- -D warnings`
 - `cargo build`
-- CLI smoke tests for `init`, filtered `list`, `list --json`, `pin`, `unpin`, `workspace list`, `doctor`, and `list --live`
+- CLI smoke tests for filtered `list`, `list --json`, `pin`, `unpin`, `workspace list`, `doctor`, and `list --live`
 
 `open`, `restore`, `jump`, and `workspace open` were not smoke-tested end-to-end in this terminal because they intentionally attach or switch the active tmux client.
+
+Test layout:
+
+- Unit tests live next to the module logic under `src/`.
+- Integration tests live under `tests/` and execute the compiled `muxwf` binary with isolated temporary `HOME` directories.
 
 ## What It Does
 
@@ -52,23 +57,49 @@ Verified locally:
 
 ## Install
 
-Requirements:
+Ubuntu one-command install:
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/tuannm99/muxfw/master/install.sh)"
+```
+
+The installer:
+
+- installs Ubuntu packages: `ca-certificates`, `curl`, `git`, `build-essential`, `pkg-config`, `tmux`, and `fzf`
+- installs Rust with `rustup` when `cargo` is missing
+- clones or updates the repo at `~/.local/src/muxwf`
+- installs `muxwf` into `~/.local/bin/muxwf` and symlinks `mw`
+- installs shell completions for bash, zsh, and fish under your home directory
+
+If `~/.local/bin` is not in `PATH`, add this to your shell profile:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Installer options:
+
+```bash
+MUXWF_BRANCH=master sh -c "$(curl -fsSL https://raw.githubusercontent.com/tuannm99/muxfw/master/install.sh)"
+MUXWF_INSTALL_DIR="$HOME/src/muxwf" sh -c "$(curl -fsSL https://raw.githubusercontent.com/tuannm99/muxfw/master/install.sh)"
+```
+
+Manual requirements:
 
 - Rust stable
 - tmux
-- fzf, optional, only for `muxwf jump`
+- fzf, optional, only for `mw jump`
 
 Install from this checkout:
 
 ```bash
-cargo install --path .
+cargo install --path . --locked --force
 ```
 
-Create the state directory on first use:
+Validate the environment on first use:
 
 ```bash
-muxwf doctor
-muxwf init
+mw doctor
 ```
 
 All state lives under:
@@ -89,40 +120,65 @@ All state lives under:
 ## Commands
 
 ```bash
-muxwf work create <name> [--root <path>] [--session <name>] [--group <group>] [--tag <tag>] [--favorite] [--description <text>]
-muxwf work edit <name>
-muxwf work update <name> [--root <path>] [--session <name>] [--group <group>] [--clear-group] [--tag <tag>] [--clear-tags] [--on-restore <cmd>]
-muxwf work delete <name>
-muxwf work list [--names-only] [--json] [--tag <tag>] [--group <group>] [--favorite] [--recent] [--live]
+mw work create <name> [--root <path>] [--session <name>] [--group <group>] [--tag <tag>] [--favorite] [--description <text>]
+mw work edit <name>
+mw work update <name> [--root <path>] [--session <name>] [--group <group>] [--clear-group] [--tag <tag>] [--clear-tags] [--on-restore <cmd>]
+mw work delete <name>
+mw work list [--names-only] [--json] [--tag <tag>] [--group <group>] [--favorite] [--recent] [--live]
 ```
 
 Short aliases:
 
 ```bash
-muxwf add <name>
-muxwf edit <name>
-muxwf rm <name>
-muxwf list
+mw add <name>
+mw add current [--name <work>] [--group <group>] [--tag <tag>] [--favorite] [--description <text>]
+mw edit <name>
+mw rm <name>
+mw list
 ```
 
 Core workflow:
 
 ```bash
-muxwf init                 # create a work from the current directory
-muxwf save [work]          # capture configured/current tmux session
-muxwf restore <work>       # restore from snapshot, then attach/switch
-muxwf open <work>          # attach if session exists, else restore, else create
-muxwf close <work>         # kill the tmux session, keeping the snapshot
-muxwf current              # print the work for the current tmux session
-muxwf pin <work>           # mark favorite
-muxwf unpin <work>         # remove favorite
-muxwf recent               # list works by last_opened_at descending
-muxwf show <work>          # print snapshot JSON
-muxwf doctor               # validate tmux, configs, snapshots, plugins
-muxwf jump                 # fzf select and open
-muxwf workspace list
-muxwf workspace open <name>
+mw init                 # generate work configs/snapshots from all running tmux sessions
+mw add current          # generate a work config/snapshot from the current tmux session
+mw add <name>           # manually create a work from the current directory
+mw save [work]          # capture configured/current tmux session
+mw restore <work>       # restore from snapshot, then attach/switch
+mw open <work>          # attach if session exists, else restore, else create
+mw close <work>         # kill the tmux session, keeping the snapshot
+mw current              # print the work for the current tmux session
+mw pin <work>           # mark favorite
+mw unpin <work>         # remove favorite
+mw recent               # list works by last_opened_at descending
+mw show <work>          # print snapshot JSON
+mw doctor               # validate tmux, configs, snapshots, plugins
+mw jump                 # fzf select and open
+mw completion zsh       # print a completion script for bash, zsh, fish, etc.
+mw workspace list
+mw workspace open <name>
 ```
+
+`mw init` skips existing work configs and snapshots by default. Use `mw init --overwrite` when you intentionally want to regenerate them from the currently running tmux sessions.
+
+## Shell Completion
+
+The installer writes completions to:
+
+```text
+~/.local/share/bash-completion/completions/mw
+~/.local/share/zsh/site-functions/_mw
+~/.config/fish/completions/mw.fish
+```
+
+Manual generation:
+
+```bash
+mkdir -p ~/.local/share/zsh/site-functions
+mw completion zsh > ~/.local/share/zsh/site-functions/_mw
+```
+
+For zsh, make sure `~/.local/share/zsh/site-functions` is in `fpath` before `compinit` runs.
 
 ## Work Config
 
@@ -141,7 +197,7 @@ created_at: "2026-04-19T08:00:00Z"
 updated_at: "2026-04-19T08:00:00Z"
 ```
 
-Optional windows are used when `muxwf open <work>` creates a brand-new session with no snapshot:
+Optional windows are used when `mw open <work>` creates a brand-new session with no snapshot:
 
 ```yaml
 name: api
@@ -164,7 +220,7 @@ created_at: "2026-04-19T08:00:00Z"
 updated_at: "2026-04-19T09:00:00Z"
 ```
 
-If `on_restore` is non-empty, it runs in every restored pane after `cd <cwd>`. If `on_restore` is empty, `muxwf` checks restore rules.
+If `on_restore` is non-empty, it runs in every restored pane after `cd <cwd>`. If `on_restore` is empty, `mw` checks restore rules.
 
 Old v1 work YAML remains valid. Missing v2 fields default to empty tags, no group, not favorite, no description, no last-opened time, and current timestamps when the file is loaded and next written.
 
@@ -173,15 +229,15 @@ Old v1 work YAML remains valid. Missing v2 fields default to empty tags, no grou
 List output is tab-separated and keeps the work name as the first field:
 
 ```bash
-muxwf list --names-only
-muxwf list --tag backend --group platform
-muxwf list --favorite
-muxwf list --recent
-muxwf list --live
-muxwf list --json
+mw list --names-only
+mw list --tag backend --group platform
+mw list --favorite
+mw list --recent
+mw list --live
+mw list --json
 ```
 
-`muxwf jump` ranks favorites first, then recently opened works, then live tmux sessions, then the remaining works. It uses `fzf` when available and falls back to a numbered prompt when `fzf` is missing.
+`mw jump` ranks favorites first, then recently opened works, then live tmux sessions, then the remaining works. It uses `fzf` when available and falls back to a numbered prompt when `fzf` is missing.
 
 ## Workspace Bundles
 
@@ -194,7 +250,7 @@ works:
   - sample-api
 ```
 
-`muxwf workspace open demo-suite` prepares each listed work in order using the same open path, updates `last_opened_at`, and then attaches or switches to the first work's tmux session.
+`mw workspace open demo-suite` prepares each listed work in order using the same open path, updates `last_opened_at`, and then attaches or switches to the first work's tmux session.
 
 ## Restore Rules
 
@@ -228,8 +284,8 @@ aliases:
 Usage:
 
 ```bash
-muxwf k pods
-muxwf k logs mypod
+mw k pods
+mw k logs mypod
 ```
 
 Python example:
@@ -254,20 +310,20 @@ Supported placeholders:
 ## FZF Usage
 
 ```bash
-muxwf list --names-only | fzf | xargs muxwf open
+mw list --names-only | fzf | xargs mw open
 ```
 
 Or use the built-in wrapper:
 
 ```bash
-muxwf jump
+mw jump
 ```
 
-If `fzf` is not installed, `muxwf jump` prints the ranked list and accepts either a number or a work name.
+If `fzf` is not installed, `mw jump` prints the ranked list and accepts either a number or a work name.
 
 ## Restore Behavior
 
-`muxwf save [work]` captures:
+`mw save [work]` captures:
 
 - session name
 - active window index
@@ -277,7 +333,7 @@ If `fzf` is not installed, `muxwf jump` prints the ranked list and accepts eithe
 - pane count
 - pane current working directory
 
-`muxwf restore <work>`:
+`mw restore <work>`:
 
 - refuses to overwrite an existing tmux session
 - creates missing sessions and windows
@@ -285,19 +341,24 @@ If `fzf` is not installed, `muxwf jump` prints the ranked list and accepts eithe
 - sends `cd -- '<cwd>'` to each pane
 - sends `cd -- '<cwd>' && <hook>` when a hook applies
 - restores active window and active pane
+- updates `last_opened_at` after a successful restore
 
-If a saved cwd no longer exists, `muxwf` falls back to the work root, then to `$HOME`, and prints a warning.
+If a saved cwd no longer exists, `mw` falls back to the work root, then to `$HOME`, and prints a warning.
 
 ## Examples
 
-Example files are in `examples/home/.muxwf/`:
+Minimal work file:
 
-```text
-examples/home/.muxwf/works/sample-app.yaml
-examples/home/.muxwf/snapshots/sample-app.json
-examples/home/.muxwf/plugins/kubectl.yaml
-examples/home/.muxwf/workspaces/demo-suite.yaml
-examples/home/.muxwf/config.yaml
+```yaml
+name: sample-app
+session: sample-app
+root: ~/dev/sample-app
+on_restore: ""
+tags:
+  - demo
+group: apps
+favorite: false
+description: Sample app workspace
 ```
 
 ## Limitations
@@ -305,5 +366,5 @@ examples/home/.muxwf/config.yaml
 - Existing sessions are never overwritten by `restore`; kill or rename the tmux session yourself first.
 - Pane split orientation is recreated by pane count first, then tmux layout is applied if possible.
 - Plugin templating is intentionally minimal.
-- Work `update` only edits common scalar fields; use `muxwf work edit <name>` for windows or complex changes.
+- Work `update` only edits common scalar fields; use `mw work edit <name>` for windows or complex changes.
 - Workspace bundles are edited as YAML files; there are no `workspace create/add/remove` commands yet.

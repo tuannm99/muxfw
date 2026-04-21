@@ -2,6 +2,7 @@ use crate::paths::AppPaths;
 use crate::work;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -44,7 +45,11 @@ impl Snapshot {
         if self.windows.is_empty() {
             bail!("snapshot has no windows");
         }
+        let mut window_indices = BTreeSet::new();
         for window in &self.windows {
+            if !window_indices.insert(window.index) {
+                bail!("snapshot has duplicate window index {}", window.index);
+            }
             if window.name.trim().is_empty() {
                 bail!("snapshot window {} has an empty name", window.index);
             }
@@ -59,6 +64,23 @@ impl Snapshot {
                     window.panes.len()
                 );
             }
+            let mut pane_indices = BTreeSet::new();
+            for pane in &window.panes {
+                if !pane_indices.insert(pane.index) {
+                    bail!(
+                        "snapshot window '{}' has duplicate pane index {}",
+                        window.name,
+                        pane.index
+                    );
+                }
+                if pane.cwd.trim().is_empty() {
+                    bail!(
+                        "snapshot window '{}' pane {} has an empty cwd",
+                        window.name,
+                        pane.index
+                    );
+                }
+            }
             if !window
                 .panes
                 .iter()
@@ -70,6 +92,12 @@ impl Snapshot {
                     window.active_pane_index
                 );
             }
+        }
+        if !window_indices.contains(&self.active_window_index) {
+            bail!(
+                "snapshot active window {} is missing",
+                self.active_window_index
+            );
         }
         Ok(())
     }
@@ -141,4 +169,49 @@ pub fn snapshot_files(paths: &AppPaths) -> Result<Vec<PathBuf>> {
     }
     files.sort();
     Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_snapshot() -> Snapshot {
+        Snapshot {
+            version: 1,
+            work_name: Some("api".to_string()),
+            session_name: "api".to_string(),
+            active_window_index: 0,
+            windows: vec![WindowSnapshot {
+                index: 0,
+                name: "main".to_string(),
+                layout: None,
+                active_pane_index: 0,
+                pane_count: 1,
+                panes: vec![PaneSnapshot {
+                    index: 0,
+                    cwd: "/tmp".to_string(),
+                }],
+            }],
+        }
+    }
+
+    #[test]
+    fn validate_rejects_missing_active_window() {
+        let mut snapshot = valid_snapshot();
+        snapshot.active_window_index = 1;
+
+        assert!(snapshot.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_pane_indices() {
+        let mut snapshot = valid_snapshot();
+        snapshot.windows[0].pane_count = 2;
+        snapshot.windows[0].panes.push(PaneSnapshot {
+            index: 0,
+            cwd: "/tmp".to_string(),
+        });
+
+        assert!(snapshot.validate().is_err());
+    }
 }

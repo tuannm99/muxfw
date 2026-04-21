@@ -1,4 +1,5 @@
 use clap::{Args, Parser, Subcommand};
+use clap_complete::Shell;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -34,7 +35,9 @@ pub enum Commands {
     Doctor,
     /// Select a work with fzf and open it.
     Jump,
-    /// Create a work from the current directory.
+    /// Generate shell completion scripts.
+    Completion(CompletionArgs),
+    /// Generate work configs and snapshots from all running tmux sessions.
     Init(InitArgs),
     /// Manage works.
     Work {
@@ -50,8 +53,8 @@ pub enum Commands {
     Pin(WorkTarget),
     /// Remove a work from favorites.
     Unpin(WorkTarget),
-    /// Short alias for `work create`.
-    Add(CreateWorkArgs),
+    /// Create a work, or use `add current` to add the current tmux session.
+    Add(AddArgs),
     /// Short alias for `work edit`.
     Edit(WorkTarget),
     /// Short alias for `work delete`.
@@ -70,6 +73,17 @@ pub struct WorkTarget {
 pub struct SaveArgs {
     /// Work name. Defaults to the work mapped to the current tmux session.
     pub name: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct CompletionArgs {
+    /// Shell to generate completions for.
+    #[arg(value_enum)]
+    pub shell: Shell,
+
+    /// Command name used inside the generated completion script.
+    #[arg(long, default_value = "mw")]
+    pub name: String,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -163,6 +177,48 @@ pub struct CreateWorkArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct AddArgs {
+    /// Work name, or `current` to add the current tmux session.
+    pub target: String,
+
+    /// Work name override when using `add current`.
+    #[arg(long)]
+    pub name: Option<String>,
+
+    /// tmux session name. Defaults to the work name. Not valid with `add current`.
+    #[arg(long)]
+    pub session: Option<String>,
+
+    /// Work root. Defaults to the current directory or discovered session cwd.
+    #[arg(long)]
+    pub root: Option<String>,
+
+    /// Command run in restored panes unless a per-cwd rule is used.
+    #[arg(long)]
+    pub on_restore: Option<String>,
+
+    /// Human-readable description.
+    #[arg(long)]
+    pub description: Option<String>,
+
+    /// Group name.
+    #[arg(long)]
+    pub group: Option<String>,
+
+    /// Tag. Can be passed multiple times.
+    #[arg(long = "tag")]
+    pub tags: Vec<String>,
+
+    /// Create as a favorite work.
+    #[arg(long)]
+    pub favorite: bool,
+
+    /// Open the created YAML file in $EDITOR.
+    #[arg(long)]
+    pub edit: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct UpdateWorkArgs {
     pub name: String,
 
@@ -193,34 +249,7 @@ pub struct UpdateWorkArgs {
 
 #[derive(Debug, Args)]
 pub struct InitArgs {
-    /// Work name. Defaults to the current directory name.
-    pub name: Option<String>,
-
-    /// tmux session name. Defaults to the work name.
+    /// Replace existing generated work configs and snapshots.
     #[arg(long)]
-    pub session: Option<String>,
-
-    /// Human-readable description.
-    #[arg(long)]
-    pub description: Option<String>,
-
-    /// Group name.
-    #[arg(long)]
-    pub group: Option<String>,
-
-    /// Tag. Can be passed multiple times.
-    #[arg(long = "tag")]
-    pub tags: Vec<String>,
-
-    /// Create as a favorite work.
-    #[arg(long)]
-    pub favorite: bool,
-
-    /// Command run in restored panes unless a per-cwd rule is used.
-    #[arg(long)]
-    pub on_restore: Option<String>,
-
-    /// Open the created YAML file in $EDITOR.
-    #[arg(long)]
-    pub edit: bool,
+    pub overwrite: bool,
 }
