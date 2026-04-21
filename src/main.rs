@@ -93,6 +93,10 @@ fn run() -> Result<i32> {
             Ok(0)
         }
         Commands::Doctor => run_doctor(&paths),
+        Commands::Version => {
+            println!("muxwf {}", env!("CARGO_PKG_VERSION"));
+            Ok(0)
+        }
         Commands::Jump => {
             tmux::ensure_tmux_installed()?;
             run_jump(&paths)?;
@@ -743,6 +747,8 @@ fn format_timestamp(value: Option<&DateTime<Utc>>) -> String {
 
 fn run_doctor(paths: &AppPaths) -> Result<i32> {
     let mut failures = 0;
+
+    println!("ok    {:<14} {}", "version", env!("CARGO_PKG_VERSION"));
 
     report(
         "tmux",

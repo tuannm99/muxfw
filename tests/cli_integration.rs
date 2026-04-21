@@ -137,6 +137,8 @@ fn completion_command_generates_shell_script() {
         stderr(&zsh)
     );
     assert!(stdout(&zsh).contains("#compdef mw"));
+    assert!(stdout(&zsh).contains("_muxwf_work_names"));
+    assert!(stdout(&zsh).contains("list --names-only"));
 
     let muxwf_zsh = run(&home, &["completion", "zsh", "--name", "muxwf"]);
     assert!(
@@ -146,6 +148,45 @@ fn completion_command_generates_shell_script() {
         stderr(&muxwf_zsh)
     );
     assert!(stdout(&muxwf_zsh).contains("#compdef muxwf"));
+
+    cleanup_home(home);
+}
+
+#[test]
+fn version_command_prints_package_version() {
+    let home = temp_home("version");
+    let output = run(&home, &["version"]);
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&output),
+        stderr(&output)
+    );
+    assert!(stdout(&output).contains(env!("CARGO_PKG_VERSION")));
+
+    cleanup_home(home);
+}
+
+#[test]
+fn workspace_short_alias_lists_workspaces() {
+    let home = temp_home("workspace-alias");
+    let workspaces_dir = home.join(".muxwf/workspaces");
+    fs::create_dir_all(&workspaces_dir).unwrap();
+    fs::write(
+        workspaces_dir.join("suite.yaml"),
+        "name: suite\nworks:\n  - api\n",
+    )
+    .unwrap();
+
+    let output = run(&home, &["ws", "list"]);
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&output),
+        stderr(&output)
+    );
+    assert_eq!(stdout(&output).trim(), "suite\tapi");
 
     cleanup_home(home);
 }

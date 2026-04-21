@@ -70,6 +70,7 @@ The installer:
 - clones or updates the repo at `~/.local/src/muxwf`
 - installs `muxwf` into `~/.local/bin/muxwf` and symlinks `mw`
 - installs shell completions for bash, zsh, and fish under your home directory
+- installs a small Neovim plugin when `nvim` is available
 
 If `~/.local/bin` is not in `PATH`, add this to your shell profile:
 
@@ -153,13 +154,14 @@ mw unpin <work>         # remove favorite
 mw recent               # list works by last_opened_at descending
 mw show <work>          # print snapshot JSON
 mw doctor               # validate tmux, configs, snapshots, plugins
+mw version              # print CLI version
 mw jump                 # fzf select and open
 mw completion zsh       # print a completion script for bash, zsh, fish, etc.
-mw workspace list
-mw workspace open <name>
+mw ws list
+mw ws open <name>
 ```
 
-`mw init` skips existing work configs and snapshots by default. Use `mw init --overwrite` when you intentionally want to regenerate them from the currently running tmux sessions.
+`mw init` skips configs and snapshots that already exist. If a work config exists but its snapshot is missing, `mw init` keeps the config and writes the missing snapshot. Use `mw init --overwrite` when you intentionally want to regenerate both from the currently running tmux sessions.
 
 ## Shell Completion
 
@@ -179,6 +181,19 @@ mw completion zsh > ~/.local/share/zsh/site-functions/_mw
 ```
 
 For zsh, make sure `~/.local/share/zsh/site-functions` is in `fpath` before `compinit` runs.
+
+Zsh completion dynamically loads work names from:
+
+```bash
+mw list --names-only
+```
+
+After reinstalling completion, reload zsh and clear stale completion cache if needed:
+
+```bash
+rm -f ~/.zcompdump ~/.zcompdump-*
+exec zsh
+```
 
 ## Work Config
 
@@ -250,7 +265,45 @@ works:
   - sample-api
 ```
 
-`mw workspace open demo-suite` prepares each listed work in order using the same open path, updates `last_opened_at`, and then attaches or switches to the first work's tmux session.
+`mw ws open demo-suite` prepares each listed work in order using the same open path, updates `last_opened_at`, and then attaches or switches to the first work's tmux session. `mw workspace ...` remains available as the long form.
+
+## Neovim
+
+The installer copies a native package to:
+
+```text
+~/.config/nvim/pack/muxwf/start/muxwf.nvim/plugin/muxwf.lua
+```
+
+Commands:
+
+```vim
+:MwOpen [work]
+:MwJump
+:MwWorkspaceOpen [workspace]
+:MwWorkspaceList
+```
+
+Default normal-mode mappings:
+
+```text
+<leader>mo  prompt/open work
+<leader>mj  run mw jump
+<leader>mw  prompt/open workspace
+<leader>ml  list workspaces in a scratch buffer
+```
+
+Disable default mappings before the plugin loads:
+
+```lua
+vim.g.muxwf_default_mappings = 0
+```
+
+Use a custom binary path:
+
+```lua
+vim.g.muxwf_bin = vim.fn.expand("~/.local/bin/mw")
+```
 
 ## Restore Rules
 

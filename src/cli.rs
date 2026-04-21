@@ -33,6 +33,8 @@ pub enum Commands {
     Show(WorkTarget),
     /// Validate environment and config files.
     Doctor,
+    /// Print the muxwf version.
+    Version,
     /// Select a work with fzf and open it.
     Jump,
     /// Generate shell completion scripts.
@@ -45,6 +47,7 @@ pub enum Commands {
         command: WorkCommands,
     },
     /// Manage workspace bundles.
+    #[command(alias = "ws")]
     Workspace {
         #[command(subcommand)]
         command: WorkspaceCommands,
