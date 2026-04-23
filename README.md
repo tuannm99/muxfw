@@ -297,6 +297,23 @@ The installer copies a native package to:
 }
 ```
 
+`lazy.nvim` local development example:
+
+```lua
+{
+  dir = "/home/minhtuan/dev/local/muxwf/nvim",
+  name = "muxwf.nvim",
+  lazy = false,
+  config = function()
+    vim.g.muxwf_bin = vim.fn.expand("~/.local/bin/mw")
+    -- Set to 0 if you want to define your own mappings.
+    vim.g.muxwf_default_mappings = 1
+  end,
+}
+```
+
+The Neovim extension now uses a split layout under `nvim/lua/muxwf/`. See `nvim/README.md` for the module map.
+
 Commands:
 
 ```vim
@@ -317,10 +334,7 @@ Default normal-mode mappings:
 
 ```text
 <leader>mo  prompt/open work
-<leader>mj  run mw jump
 <leader>mw  prompt/open workspace
-<leader>ml  list workspaces in a scratch buffer
-<leader>mm  list works in a scratch buffer
 ```
 
 Disable default mappings before the plugin loads:
