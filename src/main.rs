@@ -589,18 +589,39 @@ fn edit_path(path: &Path) -> Result<()> {
 
 fn delete_work_and_snapshot(paths: &AppPaths, name: &str) -> Result<()> {
     paths.ensure_state_dirs()?;
+    let work = work::load_work(paths, name)?;
+    let mut removed_session = false;
+    if tmux::session_exists(&work.session)? {
+        tmux::kill_session(&work.session)
+            .with_context(|| format!("failed to kill tmux session '{}'", work.session))?;
+        removed_session = true;
+    }
+
     work::delete_work(paths, name)?;
     let snapshot_path = paths.snapshot_file(name);
     if snapshot_path.exists() {
         fs::remove_file(&snapshot_path)
             .with_context(|| format!("failed to delete {}", snapshot_path.display()))?;
-        println!(
-            "deleted '{}' and {}",
-            name,
-            paths.display_path(&snapshot_path)
-        );
+        if removed_session {
+            println!(
+                "deleted '{}' (killed session '{}') and {}",
+                name,
+                work.session,
+                paths.display_path(&snapshot_path)
+            );
+        } else {
+            println!(
+                "deleted '{}' and {}",
+                name,
+                paths.display_path(&snapshot_path)
+            );
+        }
     } else {
-        println!("deleted '{}'", name);
+        if removed_session {
+            println!("deleted '{}' (killed session '{}')", name, work.session);
+        } else {
+            println!("deleted '{}'", name);
+        }
     }
     Ok(())
 }

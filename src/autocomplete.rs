@@ -103,7 +103,9 @@ mod tests {
         let rendered = String::from_utf8(patch_zsh_completion(output, "mw")).unwrap();
 
         assert!(rendered.contains("_mw_commands"));
-        assert!(rendered.contains("'open:Switch/attach"));
+        assert!(rendered.contains(
+            "'open:Switch or attach to the session, restoring or creating it if needed'"
+        ));
         assert!(rendered.contains("'init:Generate work configs"));
         assert!(rendered.contains("local cmd='mw'"));
         assert!(rendered.contains("_muxwf_work_names"));

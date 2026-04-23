@@ -23,6 +23,15 @@ fn run(home: &PathBuf, args: &[&str]) -> Output {
         .unwrap()
 }
 
+fn run_with_path(home: &PathBuf, path: &str, args: &[&str]) -> Output {
+    Command::new(bin())
+        .args(args)
+        .env("HOME", home)
+        .env("PATH", path)
+        .output()
+        .unwrap()
+}
+
 fn cleanup_home(home: PathBuf) {
     match fs::remove_dir_all(&home) {
         Ok(()) => {}
@@ -356,6 +365,63 @@ fn workspace_add_remove_and_delete_work() {
         stderr(&listed_after_delete)
     );
     assert!(stdout(&listed_after_delete).trim().is_empty());
+
+    cleanup_home(home);
+}
+
+#[test]
+fn rm_kills_tmux_session_before_deleting_work() {
+    let home = temp_home("rm-kills-session");
+    let works_dir = home.join(".muxwf/works");
+    let snapshots_dir = home.join(".muxwf/snapshots");
+    let fake_bin_dir = home.join("bin");
+    fs::create_dir_all(&works_dir).unwrap();
+    fs::create_dir_all(&snapshots_dir).unwrap();
+    fs::create_dir_all(&fake_bin_dir).unwrap();
+
+    fs::write(
+        works_dir.join("api.yaml"),
+        "name: api\nsession: api-session\nroot: /tmp\non_restore: \"\"\n",
+    )
+    .unwrap();
+    fs::write(snapshots_dir.join("api.json"), "{}").unwrap();
+
+    let tmux_log = home.join("tmux.log");
+    let tmux_script = fake_bin_dir.join("tmux");
+    fs::write(
+        &tmux_script,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {}\nif [ \"$1\" = \"has-session\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"kill-session\" ]; then\n  exit 0\nfi\nexit 1\n",
+            tmux_log.display()
+        ),
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&tmux_script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&tmux_script, perms).unwrap();
+    }
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let path = format!("{}:{}", fake_bin_dir.display(), current_path);
+    let output = run_with_path(&home, &path, &["rm", "api"]);
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&output),
+        stderr(&output)
+    );
+    assert!(!works_dir.join("api.yaml").exists());
+    assert!(!snapshots_dir.join("api.json").exists());
+
+    let tmux_calls = fs::read_to_string(&tmux_log).unwrap();
+    assert!(tmux_calls.contains("has-session -t api-session"));
+    assert!(tmux_calls.contains("kill-session -t api-session"));
+    assert!(stdout(&output).contains("killed session 'api-session'"));
 
     cleanup_home(home);
 }
