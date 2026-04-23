@@ -1,6 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use clap_complete::Shell;
 
+// Top-level CLI entrypoint that only carries the root subcommand.
 #[derive(Debug, Parser)]
 #[command(
     name = "muxwf",
@@ -13,13 +14,14 @@ pub struct Cli {
     pub command: Commands,
 }
 
+// Main command surface exposed by the binary.
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Save the configured tmux session into ~/.muxwf/snapshots/<work>.json.
     Save(SaveArgs),
     /// Restore the configured tmux session from its snapshot.
     Restore(WorkTarget),
-    /// Switch/attach to the session, restoring or creating it if needed.
+    /// Switch or attach to the session, restoring or creating it if needed.
     Open(WorkTarget),
     /// Kill the configured tmux session while keeping its snapshot.
     Close(WorkTarget),
@@ -31,7 +33,7 @@ pub enum Commands {
     Recent,
     /// Print the saved snapshot JSON for a work.
     Show(WorkTarget),
-    /// Validate environment and config files.
+    /// Validate the environment and config files.
     Doctor,
     /// Print the muxwf version.
     Version,
@@ -62,22 +64,25 @@ pub enum Commands {
     Edit(WorkTarget),
     /// Short alias for `work delete`.
     Rm(WorkTarget),
-    /// Plugin/alias invocation: muxwf <plugin> <alias> [args...]
+    /// Plugin or alias invocation: muxwf <plugin> <alias> [args...]
     #[command(external_subcommand)]
     Plugin(Vec<String>),
 }
 
+// Shared args shape for commands that only need a work name.
 #[derive(Debug, Args)]
 pub struct WorkTarget {
     pub name: String,
 }
 
+// Args for `save`, allowing the name to be omitted and inferred from the current session.
 #[derive(Debug, Args)]
 pub struct SaveArgs {
-    /// Work name. Defaults to the work mapped to the current tmux session.
+    /// Work name; defaults to the work mapped to the current tmux session.
     pub name: Option<String>,
 }
 
+// Args for generating completion scripts.
 #[derive(Debug, Args)]
 pub struct CompletionArgs {
     /// Shell to generate completions for.
@@ -89,6 +94,7 @@ pub struct CompletionArgs {
     pub name: String,
 }
 
+// Filters and output modes for `list`.
 #[derive(Debug, Args, Clone)]
 pub struct ListArgs {
     /// Print only work names, one per line.
@@ -99,7 +105,7 @@ pub struct ListArgs {
     #[arg(long)]
     pub json: bool,
 
-    /// Only include works with this tag. Can be passed multiple times.
+    /// Only include works with this tag; can be passed multiple times.
     #[arg(long = "tag")]
     pub tags: Vec<String>,
 
@@ -120,6 +126,19 @@ pub struct ListArgs {
     pub live: bool,
 }
 
+// Output modes for `workspace list`.
+#[derive(Debug, Args, Clone)]
+pub struct WorkspaceListArgs {
+    /// Print only workspace names, one per line.
+    #[arg(long, conflicts_with = "json")]
+    pub names_only: bool,
+
+    /// Print all workspaces as JSON.
+    #[arg(long)]
+    pub json: bool,
+}
+
+// Subcommands dedicated to managing work YAML files.
 #[derive(Debug, Subcommand)]
 pub enum WorkCommands {
     /// Create a work YAML file.
@@ -134,23 +153,71 @@ pub enum WorkCommands {
     List(ListArgs),
 }
 
+// Subcommands for managing workspace bundles.
 #[derive(Debug, Subcommand)]
 pub enum WorkspaceCommands {
     /// List workspace bundles.
-    List,
+    List(WorkspaceListArgs),
     /// Open all works in a workspace bundle.
     Open(WorkTarget),
+    /// Create a workspace bundle YAML file.
+    Create(CreateWorkspaceArgs),
+    /// Open a workspace bundle YAML file in $EDITOR.
+    Edit(WorkTarget),
+    /// Replace the full work list for a workspace bundle.
+    Update(UpdateWorkspaceArgs),
+    /// Append works to a workspace bundle.
+    Add(WorkspaceMembersArgs),
+    /// Remove works from a workspace bundle.
+    Remove(WorkspaceMembersArgs),
+    /// Delete a workspace bundle YAML file.
+    Delete(WorkTarget),
 }
 
+// Args for `workspace create`.
+#[derive(Debug, Args)]
+pub struct CreateWorkspaceArgs {
+    pub name: String,
+
+    /// Work names included in the workspace; can be passed multiple times.
+    #[arg(long = "work", required = true)]
+    pub works: Vec<String>,
+
+    /// Open the created YAML file in $EDITOR.
+    #[arg(long)]
+    pub edit: bool,
+}
+
+// Args for `workspace update`.
+#[derive(Debug, Args)]
+pub struct UpdateWorkspaceArgs {
+    pub name: String,
+
+    /// Full replacement work list; can be passed multiple times.
+    #[arg(long = "work", required = true)]
+    pub works: Vec<String>,
+}
+
+// Shared args for `workspace add/remove`.
+#[derive(Debug, Args)]
+pub struct WorkspaceMembersArgs {
+    pub name: String,
+
+    /// Work names to add or remove; can be passed multiple times.
+    #[arg(long = "work", required = true)]
+    pub works: Vec<String>,
+}
+
+// Args for `work create`.
 #[derive(Debug, Args)]
 pub struct CreateWorkArgs {
     pub name: String,
 
-    /// tmux session name. Defaults to the work name.
+    /// tmux session name; defaults to the work name.
     #[arg(long)]
     pub session: Option<String>,
 
-    /// Work root. Defaults to the current directory.
+    /// Work root; defaults to the current directory.
     #[arg(long)]
     pub root: Option<String>,
 
@@ -166,7 +233,7 @@ pub struct CreateWorkArgs {
     #[arg(long)]
     pub group: Option<String>,
 
-    /// Tag. Can be passed multiple times.
+    /// Tag; can be passed multiple times.
     #[arg(long = "tag")]
     pub tags: Vec<String>,
 
@@ -179,6 +246,7 @@ pub struct CreateWorkArgs {
     pub edit: bool,
 }
 
+// Args for `add`, covering both normal add and `add current`.
 #[derive(Debug, Args)]
 pub struct AddArgs {
     /// Work name, or `current` to add the current tmux session.
@@ -188,11 +256,11 @@ pub struct AddArgs {
     #[arg(long)]
     pub name: Option<String>,
 
-    /// tmux session name. Defaults to the work name. Not valid with `add current`.
+    /// tmux session name; defaults to the work name; not valid with `add current`.
     #[arg(long)]
     pub session: Option<String>,
 
-    /// Work root. Defaults to the current directory or discovered session cwd.
+    /// Work root; defaults to the current directory or the discovered session cwd.
     #[arg(long)]
     pub root: Option<String>,
 
@@ -208,7 +276,7 @@ pub struct AddArgs {
     #[arg(long)]
     pub group: Option<String>,
 
-    /// Tag. Can be passed multiple times.
+    /// Tag; can be passed multiple times.
     #[arg(long = "tag")]
     pub tags: Vec<String>,
 
@@ -221,6 +289,7 @@ pub struct AddArgs {
     pub edit: bool,
 }
 
+// Args for `work update`, touching only common scalar fields.
 #[derive(Debug, Args)]
 pub struct UpdateWorkArgs {
     pub name: String,
@@ -250,6 +319,7 @@ pub struct UpdateWorkArgs {
     pub clear_tags: bool,
 }
 
+// Args for `init`.
 #[derive(Debug, Args)]
 pub struct InitArgs {
     /// Replace existing generated work configs and snapshots.

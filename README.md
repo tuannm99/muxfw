@@ -158,7 +158,15 @@ mw version              # print CLI version
 mw jump                 # fzf select and open
 mw completion zsh       # print a completion script for bash, zsh, fish, etc.
 mw ws list
+mw ws list --names-only
+mw ws list --json
 mw ws open <name>
+mw ws create <name> --work <work> [--work <work> ...]
+mw ws update <name> --work <work> [--work <work> ...]
+mw ws add <name> --work <work> [--work <work> ...]
+mw ws remove <name> --work <work> [--work <work> ...]
+mw ws edit <name>
+mw ws delete <name>
 ```
 
 `mw init` skips configs and snapshots that already exist. If a work config exists but its snapshot is missing, `mw init` keeps the config and writes the missing snapshot. Use `mw init --overwrite` when you intentionally want to regenerate both from the currently running tmux sessions.
@@ -203,13 +211,13 @@ Minimal `~/.muxwf/works/sample-app.yaml`:
 name: sample-app
 session: sample-app
 root: ~/dev/sample-app
-on_restore: ""
+on_restore: ''
 tags: []
 group: demo
 favorite: false
 description: Sample application workspace
-created_at: "2026-04-19T08:00:00Z"
-updated_at: "2026-04-19T08:00:00Z"
+created_at: '2026-04-19T08:00:00Z'
+updated_at: '2026-04-19T08:00:00Z'
 ```
 
 Optional windows are used when `mw open <work>` creates a brand-new session with no snapshot:
@@ -224,15 +232,15 @@ windows:
     panes: 2
   - name: logs
     cwd: ~/dev/api
-on_restore: ""
+on_restore: ''
 tags:
   - backend
 group: platform
 favorite: true
 description: API workspace
-last_opened_at: "2026-04-19T09:00:00Z"
-created_at: "2026-04-19T08:00:00Z"
-updated_at: "2026-04-19T09:00:00Z"
+last_opened_at: '2026-04-19T09:00:00Z'
+created_at: '2026-04-19T08:00:00Z'
+updated_at: '2026-04-19T09:00:00Z'
 ```
 
 If `on_restore` is non-empty, it runs in every restored pane after `cd <cwd>`. If `on_restore` is empty, `mw` checks restore rules.
@@ -275,14 +283,35 @@ The installer copies a native package to:
 ~/.config/nvim/pack/muxwf/start/muxwf.nvim/plugin/muxwf.lua
 ```
 
+`lazy.nvim` example:
+
+```lua
+{
+  "tuannm99/muxwf",
+  lazy = false,
+  config = function()
+    vim.g.muxwf_bin = vim.fn.expand("~/.local/bin/mw")
+    -- Set to 0 if you want to define your own mappings.
+    vim.g.muxwf_default_mappings = 1
+  end,
+}
+```
+
 Commands:
 
 ```vim
 :MwOpen [work]
+:MwRestore [work]
+:MwSave [work]
 :MwJump
+:MwCurrent
+:MwDoctor
+:MwWorkList
 :MwWorkspaceOpen [workspace]
 :MwWorkspaceList
 ```
+
+`MwOpen` and `MwWorkspaceOpen` use `vim.ui.select()` when called without an argument. `MwWorkList` and `MwWorkspaceList` open scratch buffers with `Enter` to open, `r` to refresh, and `q` to close.
 
 Default normal-mode mappings:
 
@@ -291,6 +320,7 @@ Default normal-mode mappings:
 <leader>mj  run mw jump
 <leader>mw  prompt/open workspace
 <leader>ml  list workspaces in a scratch buffer
+<leader>mm  list works in a scratch buffer
 ```
 
 Disable default mappings before the plugin loads:
@@ -311,11 +341,11 @@ vim.g.muxwf_bin = vim.fn.expand("~/.local/bin/mw")
 
 ```yaml
 rules:
-  - cwd_regex: ".*/pythonproject$"
-    on_restore: "source .venv/bin/activate"
+  - cwd_regex: '.*/pythonproject$'
+    on_restore: 'source .venv/bin/activate'
 
-  - cwd_regex: ".*/frontend$"
-    on_restore: "pnpm install"
+  - cwd_regex: '.*/frontend$'
+    on_restore: 'pnpm install'
 ```
 
 Rules are evaluated in order. First match wins.
@@ -328,10 +358,10 @@ Rules are evaluated in order. First match wins.
 name: k
 binary: kubectl
 aliases:
-  pods: "get pods -A"
-  po: "get pods -A"
-  logs: "logs -f {{arg1}}"
-  describe: "describe {{args}}"
+  pods: 'get pods -A'
+  po: 'get pods -A'
+  logs: 'logs -f {{arg1}}'
+  describe: 'describe {{args}}'
 ```
 
 Usage:
@@ -347,9 +377,9 @@ Python example:
 name: py
 binary: bash
 aliases:
-  venv: "python -m venv .venv"
-  act: "source .venv/bin/activate"
-  test: "pytest -q"
+  venv: 'python -m venv .venv'
+  act: 'source .venv/bin/activate'
+  test: 'pytest -q'
 ```
 
 Shell binaries (`bash`, `sh`, `zsh`, `fish`) run aliases with `-lc`. Other binaries receive argv directly after simple template expansion.
@@ -406,7 +436,7 @@ Minimal work file:
 name: sample-app
 session: sample-app
 root: ~/dev/sample-app
-on_restore: ""
+on_restore: ''
 tags:
   - demo
 group: apps
@@ -420,4 +450,4 @@ description: Sample app workspace
 - Pane split orientation is recreated by pane count first, then tmux layout is applied if possible.
 - Plugin templating is intentionally minimal.
 - Work `update` only edits common scalar fields; use `mw work edit <name>` for windows or complex changes.
-- Workspace bundles are edited as YAML files; there are no `workspace create/add/remove` commands yet.
+- Workspace bundles still stay intentionally simple: ordered work lists with open/list/edit lifecycle and membership updates.

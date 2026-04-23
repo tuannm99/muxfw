@@ -11,8 +11,9 @@ mod work;
 mod workspace;
 
 use crate::cli::{
-    AddArgs, Cli, Commands, CreateWorkArgs, InitArgs, ListArgs, SaveArgs, UpdateWorkArgs,
-    WorkCommands, WorkspaceCommands,
+    AddArgs, Cli, Commands, CreateWorkArgs, CreateWorkspaceArgs, InitArgs, ListArgs, SaveArgs,
+    UpdateWorkArgs, UpdateWorkspaceArgs, WorkCommands, WorkspaceCommands, WorkspaceListArgs,
+    WorkspaceMembersArgs,
 };
 use crate::paths::{AppPaths, find_binary};
 use crate::work::Work;
@@ -181,8 +182,8 @@ fn work_for_save(paths: &AppPaths, args: SaveArgs) -> Result<Work> {
 
 fn run_workspace_command(paths: &AppPaths, command: WorkspaceCommands) -> Result<i32> {
     match command {
-        WorkspaceCommands::List => {
-            print_workspace_list(paths)?;
+        WorkspaceCommands::List(args) => {
+            print_workspace_list(paths, args)?;
             Ok(0)
         }
         WorkspaceCommands::Open(target) => {
@@ -190,17 +191,51 @@ fn run_workspace_command(paths: &AppPaths, command: WorkspaceCommands) -> Result
             open_workspace(paths, &target.name)?;
             Ok(0)
         }
+        WorkspaceCommands::Create(args) => {
+            paths.ensure_state_dirs()?;
+            let edit = args.edit;
+            let workspace = build_created_workspace(args)?;
+            create_workspace(paths, workspace, edit)?;
+            Ok(0)
+        }
+        WorkspaceCommands::Edit(target) => {
+            edit_workspace(paths, &target.name)?;
+            Ok(0)
+        }
+        WorkspaceCommands::Update(args) => {
+            update_workspace(paths, args)?;
+            Ok(0)
+        }
+        WorkspaceCommands::Add(args) => {
+            add_workspace_works(paths, args)?;
+            Ok(0)
+        }
+        WorkspaceCommands::Remove(args) => {
+            remove_workspace_works(paths, args)?;
+            Ok(0)
+        }
+        WorkspaceCommands::Delete(target) => {
+            delete_workspace(paths, &target.name)?;
+            Ok(0)
+        }
     }
 }
 
-fn print_workspace_list(paths: &AppPaths) -> Result<()> {
+// Print workspace listings as text or JSON, shared by CLI and completion.
+fn print_workspace_list(paths: &AppPaths, args: WorkspaceListArgs) -> Result<()> {
     let workspaces = workspace::list_workspaces(paths)?;
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&workspaces)?);
+        return Ok(());
+    }
+
     for workspace in workspaces {
-        println!("{}\t{}", workspace.name, workspace.works.join(","));
+        print_workspace_row(&workspace, args.names_only);
     }
     Ok(())
 }
 
+// Prepare all works in declaration order, then attach or switch to the first session.
 fn open_workspace(paths: &AppPaths, name: &str) -> Result<()> {
     let workspace = workspace::load_workspace(paths, name)?;
     let mut opened = Vec::new();
@@ -218,6 +253,116 @@ fn open_workspace(paths: &AppPaths, name: &str) -> Result<()> {
         .first()
         .with_context(|| format!("workspace '{}' has no works", workspace.name))?;
     tmux::switch_or_attach(&first.session)
+}
+
+// Convert CLI args into a fully validated workspace struct before writing.
+fn build_created_workspace(args: CreateWorkspaceArgs) -> Result<workspace::Workspace> {
+    let workspace = workspace::Workspace {
+        name: args.name,
+        works: args.works,
+    };
+    workspace.validate()?;
+    Ok(workspace)
+}
+
+// Create a new workspace and optionally open the editor right after writing the file.
+fn create_workspace(paths: &AppPaths, workspace: workspace::Workspace, edit: bool) -> Result<()> {
+    let path = paths.workspace_file(&workspace.name);
+    if path.exists() {
+        bail!(
+            "workspace '{}' already exists at {}",
+            workspace.name,
+            path.display()
+        );
+    }
+    workspace::write_workspace(paths, &workspace)?;
+    println!(
+        "created workspace '{}' at {}",
+        workspace.name,
+        paths.display_path(&path)
+    );
+    if edit {
+        edit_path(&path)?;
+    }
+    Ok(())
+}
+
+// Open an existing workspace YAML file in $EDITOR.
+fn edit_workspace(paths: &AppPaths, name: &str) -> Result<()> {
+    work::validate_name(name)?;
+    let path = paths.workspace_file(name);
+    if !path.exists() {
+        bail!("workspace '{}' does not exist at {}", name, path.display());
+    }
+    edit_path(&path)
+}
+
+// Replace the workspace work list with the new CLI input as a whole.
+fn update_workspace(paths: &AppPaths, args: UpdateWorkspaceArgs) -> Result<()> {
+    paths.ensure_state_dirs()?;
+    let mut workspace = workspace::load_workspace(paths, &args.name)?;
+    if workspace.works == args.works {
+        println!("no changes for workspace '{}'", workspace.name);
+        return Ok(());
+    }
+    workspace.works = args.works;
+    workspace::write_workspace(paths, &workspace)?;
+    println!("updated workspace '{}'", workspace.name);
+    Ok(())
+}
+
+// Append new works while preserving existing order and skipping items already present.
+fn add_workspace_works(paths: &AppPaths, args: WorkspaceMembersArgs) -> Result<()> {
+    paths.ensure_state_dirs()?;
+    let mut workspace = workspace::load_workspace(paths, &args.name)?;
+    let mut added = 0usize;
+    for work_name in args.works {
+        if workspace.works.contains(&work_name) {
+            continue;
+        }
+        workspace.works.push(work_name);
+        added += 1;
+    }
+    if added == 0 {
+        println!("no changes for workspace '{}'", workspace.name);
+        return Ok(());
+    }
+    workspace::write_workspace(paths, &workspace)?;
+    println!("updated workspace '{}' (+{})", workspace.name, added);
+    Ok(())
+}
+
+// Remove the requested works, but do not allow the workspace to become empty.
+fn remove_workspace_works(paths: &AppPaths, args: WorkspaceMembersArgs) -> Result<()> {
+    paths.ensure_state_dirs()?;
+    let mut workspace = workspace::load_workspace(paths, &args.name)?;
+    let original_len = workspace.works.len();
+    let removals = args.works.into_iter().collect::<BTreeSet<_>>();
+    workspace
+        .works
+        .retain(|work_name| !removals.contains(work_name));
+    if workspace.works.len() == original_len {
+        println!("no changes for workspace '{}'", workspace.name);
+        return Ok(());
+    }
+    if workspace.works.is_empty() {
+        bail!(
+            "workspace '{}' would become empty; delete it instead",
+            workspace.name
+        );
+    }
+    let removed = original_len - workspace.works.len();
+    workspace::write_workspace(paths, &workspace)?;
+    println!("updated workspace '{}' (-{})", workspace.name, removed);
+    Ok(())
+}
+
+// Delete the workspace from the state directory.
+fn delete_workspace(paths: &AppPaths, name: &str) -> Result<()> {
+    paths.ensure_state_dirs()?;
+    workspace::delete_workspace(paths, name)?;
+    println!("deleted workspace '{}'", name);
+    Ok(())
 }
 
 fn build_created_work(args: CreateWorkArgs) -> Result<Work> {
@@ -544,6 +689,14 @@ fn print_work_row(work: &Work, names_only: bool) {
         "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         work.name, work.session, work.root, tags, description, group, favorite, last_opened_at
     );
+}
+
+fn print_workspace_row(workspace: &workspace::Workspace, names_only: bool) {
+    if names_only {
+        println!("{}", workspace.name);
+        return;
+    }
+    println!("{}\t{}", workspace.name, workspace.works.join(","));
 }
 
 fn open_work_by_name(paths: &AppPaths, name: &str) -> Result<()> {

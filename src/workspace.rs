@@ -2,6 +2,7 @@ use crate::paths::{AppPaths, is_yaml_file};
 use crate::work;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -13,20 +14,52 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    // Validate the workspace name, work list, and duplicates to keep declaration order stable.
     pub fn validate(&self) -> Result<()> {
         work::validate_name(&self.name)?;
         if self.works.is_empty() {
             bail!("workspace '{}' has no works", self.name);
         }
+        let mut seen = BTreeSet::new();
         for work_name in &self.works {
             work::validate_name(work_name).with_context(|| {
                 format!("invalid work '{}' in workspace '{}'", work_name, self.name)
             })?;
+            if !seen.insert(work_name) {
+                bail!(
+                    "workspace '{}' contains duplicate work '{}'",
+                    self.name,
+                    work_name
+                );
+            }
         }
         Ok(())
     }
 }
 
+// Rewrite the whole workspace file after revalidating the input data.
+pub fn write_workspace(paths: &AppPaths, workspace: &Workspace) -> Result<()> {
+    let workspace = workspace.clone();
+    workspace.validate()?;
+    let path = paths.workspace_file(&workspace.name);
+    let yaml = serde_yaml::to_string(&workspace)
+        .with_context(|| format!("failed to serialize workspace '{}'", workspace.name))?;
+    fs::write(&path, yaml).with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(())
+}
+
+// Delete only the workspace file without touching related works or snapshots.
+pub fn delete_workspace(paths: &AppPaths, name: &str) -> Result<()> {
+    work::validate_name(name)?;
+    let path = paths.workspace_file(name);
+    if !path.exists() {
+        bail!("workspace '{}' does not exist at {}", name, path.display());
+    }
+    fs::remove_file(&path).with_context(|| format!("failed to delete {}", path.display()))?;
+    Ok(())
+}
+
+// Load a workspace by canonical filename and verify the declared name matches.
 pub fn load_workspace(paths: &AppPaths, name: &str) -> Result<Workspace> {
     work::validate_name(name)?;
     let path = paths.workspace_file(name);
@@ -42,6 +75,7 @@ pub fn load_workspace(paths: &AppPaths, name: &str) -> Result<Workspace> {
     Ok(workspace)
 }
 
+// Parse a standalone workspace YAML file and run full validation.
 pub fn load_workspace_file(path: &Path) -> Result<Workspace> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read workspace file {}", path.display()))?;
@@ -53,6 +87,7 @@ pub fn load_workspace_file(path: &Path) -> Result<Workspace> {
     Ok(workspace)
 }
 
+// Scan the whole workspace directory, parse each file, and sort by name for stable output.
 pub fn list_workspaces(paths: &AppPaths) -> Result<Vec<Workspace>> {
     let mut workspaces = Vec::new();
     for file in workspace_files(paths)? {
@@ -62,6 +97,7 @@ pub fn list_workspaces(paths: &AppPaths) -> Result<Vec<Workspace>> {
     Ok(workspaces)
 }
 
+// Collect only valid YAML files from the workspace directory.
 pub fn workspace_files(paths: &AppPaths) -> Result<Vec<PathBuf>> {
     let dir = paths.workspaces_dir();
     if !dir.exists() {
