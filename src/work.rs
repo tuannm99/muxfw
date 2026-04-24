@@ -1,6 +1,7 @@
 use crate::paths::{AppPaths, is_yaml_file};
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
+use clap::ValueEnum;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -11,6 +12,8 @@ pub struct Work {
     pub name: String,
     pub session: String,
     pub root: String,
+    #[serde(default)]
+    pub status: WorkStatus,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub windows: Vec<WorkWindow>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -25,10 +28,34 @@ pub struct Work {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_opened_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_saved_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_restored_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_closed_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub open_count: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub save_count: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub restore_count: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub close_count: u64,
     #[serde(default = "now_utc")]
     pub created_at: DateTime<Utc>,
     #[serde(default = "now_utc")]
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorkStatus {
+    Idea,
+    #[default]
+    Active,
+    Paused,
+    Archived,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +79,10 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
 pub fn now_utc() -> DateTime<Utc> {
     Utc::now()
 }
@@ -63,6 +94,7 @@ impl Work {
             name,
             session,
             root,
+            status: WorkStatus::Active,
             windows: Vec::new(),
             on_restore: Some(String::new()),
             tags: Vec::new(),
@@ -70,6 +102,13 @@ impl Work {
             favorite: false,
             description: None,
             last_opened_at: None,
+            last_saved_at: None,
+            last_restored_at: None,
+            last_closed_at: None,
+            open_count: 0,
+            save_count: 0,
+            restore_count: 0,
+            close_count: 0,
             created_at: now,
             updated_at: now,
         }
@@ -114,7 +153,43 @@ impl Work {
     }
 
     pub fn mark_opened_now(&mut self) {
-        self.last_opened_at = Some(now_utc());
+        let now = now_utc();
+        self.last_opened_at = Some(now);
+        self.open_count += 1;
+        if self.status == WorkStatus::Archived {
+            self.status = WorkStatus::Active;
+        }
+    }
+
+    pub fn mark_saved_now(&mut self) {
+        self.last_saved_at = Some(now_utc());
+        self.save_count += 1;
+    }
+
+    pub fn mark_restored_now(&mut self) {
+        self.last_restored_at = Some(now_utc());
+        self.restore_count += 1;
+    }
+
+    pub fn mark_closed_now(&mut self) {
+        self.last_closed_at = Some(now_utc());
+        self.close_count += 1;
+    }
+
+    pub fn is_stale(&self, stale_days: i64) -> bool {
+        let last_activity = [
+            self.last_opened_at.as_ref(),
+            self.last_saved_at.as_ref(),
+            self.last_restored_at.as_ref(),
+            self.last_closed_at.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .max()
+        .cloned()
+        .unwrap_or(self.updated_at);
+
+        now_utc().signed_duration_since(last_activity).num_days() >= stale_days
     }
 }
 

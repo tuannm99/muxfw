@@ -1,3 +1,5 @@
+use crate::work::WorkStatus;
+use crate::workspace::WorkspaceOpenPolicy;
 use clap::{Args, Parser, Subcommand};
 use clap_complete::Shell;
 
@@ -18,30 +20,46 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Save the configured tmux session into ~/.muxwf/snapshots/<work>.json.
+    #[command(hide = true)]
     Save(SaveArgs),
     /// Restore the configured tmux session from its snapshot.
+    #[command(hide = true)]
     Restore(WorkTarget),
     /// Switch or attach to the session, restoring or creating it if needed.
-    Open(WorkTarget),
+    #[command(hide = true)]
+    Open(OpenArgs),
     /// Kill the configured tmux session while keeping its snapshot.
+    #[command(hide = true)]
     Close(WorkTarget),
     /// Print the work mapped to the current tmux session.
+    #[command(hide = true)]
     Current,
     /// List works.
+    #[command(hide = true)]
     List(ListArgs),
     /// List recently opened works.
+    #[command(hide = true)]
     Recent,
+    /// List stale works.
+    #[command(hide = true)]
+    Stale(StaleArgs),
     /// Print the saved snapshot JSON for a work.
+    #[command(hide = true)]
     Show(WorkTarget),
     /// Validate the environment and config files.
+    #[command(hide = true)]
     Doctor,
     /// Print the muxwf version.
+    #[command(hide = true)]
     Version,
-    /// Select a work with fzf and open it.
-    Jump,
+    /// Compatibility alias for `open` without an explicit work name.
+    #[command(hide = true)]
+    Jump(JumpArgs),
     /// Generate shell completion scripts.
+    #[command(hide = true)]
     Completion(CompletionArgs),
     /// Generate work configs and snapshots from all running tmux sessions.
+    #[command(hide = true)]
     Init(InitArgs),
     /// Manage works.
     Work {
@@ -55,14 +73,22 @@ pub enum Commands {
         command: WorkspaceCommands,
     },
     /// Mark a work as favorite.
+    #[command(hide = true)]
     Pin(WorkTarget),
     /// Remove a work from favorites.
+    #[command(hide = true)]
     Unpin(WorkTarget),
+    /// Mark a work as archived.
+    #[command(hide = true)]
+    Archive(WorkTarget),
     /// Create a work, or use `add current` to add the current tmux session.
+    #[command(hide = true)]
     Add(AddArgs),
     /// Short alias for `work edit`.
+    #[command(hide = true)]
     Edit(WorkTarget),
     /// Short alias for `work delete`.
+    #[command(hide = true)]
     Rm(WorkTarget),
     /// Plugin or alias invocation: muxwf <plugin> <alias> [args...]
     #[command(external_subcommand)]
@@ -73,6 +99,12 @@ pub enum Commands {
 #[derive(Debug, Args)]
 pub struct WorkTarget {
     pub name: String,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct OpenArgs {
+    /// Work name. Omit to open the interactive ranked picker.
+    pub name: Option<String>,
 }
 
 // Args for `save`, allowing the name to be omitted and inferred from the current session.
@@ -92,6 +124,17 @@ pub struct CompletionArgs {
     /// Command name used inside the generated completion script.
     #[arg(long, default_value = "mw")]
     pub name: String,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct JumpArgs {
+    /// Print only work names in jump order.
+    #[arg(long, conflicts_with = "json")]
+    pub names_only: bool,
+
+    /// Print ranked works as JSON instead of launching the selector.
+    #[arg(long)]
+    pub json: bool,
 }
 
 // Filters and output modes for `list`.
@@ -117,6 +160,10 @@ pub struct ListArgs {
     #[arg(long)]
     pub favorite: bool,
 
+    /// Only include works in this lifecycle status.
+    #[arg(long, value_enum)]
+    pub status: Option<WorkStatus>,
+
     /// Only include works with last_opened_at, sorted newest first.
     #[arg(long)]
     pub recent: bool,
@@ -124,6 +171,25 @@ pub struct ListArgs {
     /// Only include works with active tmux sessions.
     #[arg(long)]
     pub live: bool,
+
+    /// Only include works with no recent activity for at least this many days.
+    #[arg(long)]
+    pub stale_days: Option<i64>,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct StaleArgs {
+    /// Minimum inactivity age in days.
+    #[arg(long, default_value_t = 30)]
+    pub days: i64,
+
+    /// Print only work names, one per line.
+    #[arg(long, conflicts_with = "json")]
+    pub names_only: bool,
+
+    /// Print all works as JSON.
+    #[arg(long)]
+    pub json: bool,
 }
 
 // Output modes for `workspace list`.
@@ -141,6 +207,10 @@ pub struct WorkspaceListArgs {
 // Subcommands dedicated to managing work YAML files.
 #[derive(Debug, Subcommand)]
 pub enum WorkCommands {
+    /// Save the configured tmux session into ~/.muxwf/snapshots/<work>.json.
+    Save(SaveArgs),
+    /// Switch or attach to the session, restoring or creating it if needed.
+    Open(OpenArgs),
     /// Create a work YAML file.
     Create(CreateWorkArgs),
     /// Open a work YAML file in $EDITOR.
@@ -183,6 +253,14 @@ pub struct CreateWorkspaceArgs {
     #[arg(long = "work", required = true)]
     pub works: Vec<String>,
 
+    /// Optional workspace profile label such as daily, release, or incident.
+    #[arg(long)]
+    pub profile: Option<String>,
+
+    /// How workspace open should treat existing or missing tmux sessions.
+    #[arg(long, value_enum, default_value_t = WorkspaceOpenPolicy::Smart)]
+    pub policy: WorkspaceOpenPolicy,
+
     /// Open the created YAML file in $EDITOR.
     #[arg(long)]
     pub edit: bool,
@@ -196,6 +274,18 @@ pub struct UpdateWorkspaceArgs {
     /// Full replacement work list; can be passed multiple times.
     #[arg(long = "work", required = true)]
     pub works: Vec<String>,
+
+    /// Set or replace the workspace profile label.
+    #[arg(long)]
+    pub profile: Option<String>,
+
+    /// Clear the workspace profile label.
+    #[arg(long)]
+    pub clear_profile: bool,
+
+    /// Set the workspace open policy.
+    #[arg(long, value_enum)]
+    pub policy: Option<WorkspaceOpenPolicy>,
 }
 
 // Shared args for `workspace add/remove`.
@@ -228,6 +318,10 @@ pub struct CreateWorkArgs {
     /// Human-readable description.
     #[arg(long)]
     pub description: Option<String>,
+
+    /// Lifecycle status.
+    #[arg(long, value_enum, default_value_t = WorkStatus::Active)]
+    pub status: WorkStatus,
 
     /// Group name.
     #[arg(long)]
@@ -272,6 +366,10 @@ pub struct AddArgs {
     #[arg(long)]
     pub description: Option<String>,
 
+    /// Lifecycle status.
+    #[arg(long, value_enum, default_value_t = WorkStatus::Active)]
+    pub status: WorkStatus,
+
     /// Group name.
     #[arg(long)]
     pub group: Option<String>,
@@ -305,6 +403,9 @@ pub struct UpdateWorkArgs {
 
     #[arg(long)]
     pub description: Option<String>,
+
+    #[arg(long, value_enum)]
+    pub status: Option<WorkStatus>,
 
     #[arg(long)]
     pub group: Option<String>,

@@ -178,6 +178,123 @@ fn version_command_prints_package_version() {
 }
 
 #[test]
+fn jump_json_returns_ranked_work_rows() {
+    let home = temp_home("jump-json");
+
+    let create_api = run(
+        &home,
+        &[
+            "work",
+            "create",
+            "api",
+            "--root",
+            "/tmp",
+            "--favorite",
+            "--description",
+            "API service",
+        ],
+    );
+    assert!(
+        create_api.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&create_api),
+        stderr(&create_api)
+    );
+
+    let create_web = run(
+        &home,
+        &[
+            "work",
+            "create",
+            "web",
+            "--root",
+            "/tmp",
+            "--description",
+            "Web UI",
+        ],
+    );
+    assert!(
+        create_web.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&create_web),
+        stderr(&create_web)
+    );
+
+    let output = run(&home, &["jump", "--json"]);
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&output),
+        stderr(&output)
+    );
+
+    let out = stdout(&output);
+    assert!(out.contains("\"name\": \"api\""));
+    assert!(out.contains("\"jump_rank\": 0"));
+    assert!(out.contains("\"live\": false"));
+
+    cleanup_home(home);
+}
+
+#[test]
+fn open_without_name_shows_ranked_prompt_and_accepts_selection() {
+    let home = temp_home("open-no-name");
+    let fake_bin_dir = home.join("bin");
+    fs::create_dir_all(&fake_bin_dir).unwrap();
+
+    let create = run(
+        &home,
+        &["work", "create", "api", "--root", "/tmp", "--favorite"],
+    );
+    assert!(
+        create.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&create),
+        stderr(&create)
+    );
+
+    let tmux_script = fake_bin_dir.join("tmux");
+    fs::write(
+        &tmux_script,
+        "#!/bin/sh\nif [ \"$1\" = \"list-sessions\" ]; then\n  exit 0\nfi\nexit 1\n",
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&tmux_script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&tmux_script, perms).unwrap();
+    }
+
+    let mut child = Command::new(bin())
+        .args(["open"])
+        .env("HOME", &home)
+        .env("PATH", fake_bin_dir.display().to_string())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    use std::io::Write;
+    child.stdin.as_mut().unwrap().write_all(b"\n").unwrap();
+    let output = child.wait_with_output().unwrap();
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let out = String::from_utf8_lossy(&output.stdout);
+    assert!(out.contains("api"));
+
+    cleanup_home(home);
+}
+
+#[test]
 fn workspace_short_alias_lists_workspaces() {
     let home = temp_home("workspace-alias");
     let workspaces_dir = home.join(".muxwf/workspaces");
@@ -195,7 +312,7 @@ fn workspace_short_alias_lists_workspaces() {
         stdout(&output),
         stderr(&output)
     );
-    assert_eq!(stdout(&output).trim(), "suite\tapi");
+    assert_eq!(stdout(&output).trim(), "suite\t-\tsmart\tapi");
 
     cleanup_home(home);
 }
@@ -270,7 +387,7 @@ fn workspace_create_update_and_list_json_work() {
         stdout(&listed),
         stderr(&listed)
     );
-    assert_eq!(stdout(&listed).trim(), "suite\tapi,worker");
+    assert_eq!(stdout(&listed).trim(), "suite\t-\tsmart\tapi,worker");
 
     cleanup_home(home);
 }
@@ -332,7 +449,7 @@ fn workspace_add_remove_and_delete_work() {
         stdout(&listed),
         stderr(&listed)
     );
-    assert_eq!(stdout(&listed).trim(), "suite\tapi,jobs");
+    assert_eq!(stdout(&listed).trim(), "suite\t-\tsmart\tapi,jobs");
 
     let remove_all = run(
         &home,
@@ -365,6 +482,145 @@ fn workspace_add_remove_and_delete_work() {
         stderr(&listed_after_delete)
     );
     assert!(stdout(&listed_after_delete).trim().is_empty());
+
+    cleanup_home(home);
+}
+
+#[test]
+fn work_status_filters_archive_and_stale_listing_work() {
+    let home = temp_home("work-status-stale");
+
+    let create = run(
+        &home,
+        &[
+            "work", "create", "api", "--root", "/tmp", "--status", "paused",
+        ],
+    );
+    assert!(
+        create.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&create),
+        stderr(&create)
+    );
+
+    let paused = run(&home, &["list", "--status", "paused", "--names-only"]);
+    assert!(paused.status.success(), "stderr:\n{}", stderr(&paused));
+    assert_eq!(stdout(&paused).trim(), "api");
+
+    let archive = run(&home, &["archive", "api"]);
+    assert!(archive.status.success(), "stderr:\n{}", stderr(&archive));
+
+    let archived = run(&home, &["list", "--status", "archived", "--json"]);
+    assert!(archived.status.success(), "stderr:\n{}", stderr(&archived));
+    let archived_out = stdout(&archived);
+    assert!(archived_out.contains("\"status\": \"archived\""));
+
+    let work_file = home.join(".muxwf/works/api.yaml");
+    let stale_yaml = "\
+name: stale
+session: stale
+root: /tmp
+status: archived
+updated_at: 2026-01-01T00:00:00Z
+last_opened_at: 2026-01-01T00:00:00Z
+";
+    fs::write(home.join(".muxwf/works/stale.yaml"), stale_yaml).unwrap();
+
+    let stale = run(&home, &["stale", "--days", "30", "--names-only"]);
+    assert!(stale.status.success(), "stderr:\n{}", stderr(&stale));
+    let stale_out = stdout(&stale);
+    assert!(stale_out.lines().any(|line| line == "stale"));
+    assert!(!stale_out.lines().any(|line| line == "api"));
+
+    assert!(work_file.exists());
+    cleanup_home(home);
+}
+
+#[test]
+fn save_updates_usage_metrics() {
+    let home = temp_home("save-metrics");
+    let works_dir = home.join(".muxwf/works");
+    let fake_bin_dir = home.join("bin");
+    fs::create_dir_all(&works_dir).unwrap();
+    fs::create_dir_all(&fake_bin_dir).unwrap();
+
+    fs::write(
+        works_dir.join("api.yaml"),
+        "name: api\nsession: api-session\nroot: /tmp\non_restore: \"\"\n",
+    )
+    .unwrap();
+
+    let tmux_script = fake_bin_dir.join("tmux");
+    fs::write(
+        &tmux_script,
+        "#!/bin/sh\nif [ \"$1\" = \"has-session\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"display-message\" ]; then\n  printf '0\\n'\n  exit 0\nfi\nif [ \"$1\" = \"list-windows\" ]; then\n  printf '0\tmain\tlayout\t1\\n'\n  exit 0\nfi\nif [ \"$1\" = \"list-panes\" ]; then\n  printf '0\t1\t/tmp\\n'\n  exit 0\nfi\nexit 1\n",
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&tmux_script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&tmux_script, perms).unwrap();
+    }
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let path = format!("{}:{}", fake_bin_dir.display(), current_path);
+    let save = run_with_path(&home, &path, &["save", "api"]);
+    assert!(save.status.success(), "stderr:\n{}", stderr(&save));
+
+    let work_yaml = fs::read_to_string(works_dir.join("api.yaml")).unwrap();
+    assert!(work_yaml.contains("save_count: 1"));
+    assert!(work_yaml.contains("last_saved_at:"));
+
+    cleanup_home(home);
+}
+
+#[test]
+fn workspace_profile_and_policy_round_trip() {
+    let home = temp_home("workspace-profile-policy");
+
+    let create = run(
+        &home,
+        &[
+            "workspace",
+            "create",
+            "daily",
+            "--work",
+            "api",
+            "--profile",
+            "incident",
+            "--policy",
+            "fresh",
+        ],
+    );
+    assert!(create.status.success(), "stderr:\n{}", stderr(&create));
+
+    let listed = run(&home, &["workspace", "list"]);
+    assert!(listed.status.success(), "stderr:\n{}", stderr(&listed));
+    assert_eq!(stdout(&listed).trim(), "daily\tincident\tfresh\tapi");
+
+    let update = run(
+        &home,
+        &[
+            "workspace",
+            "update",
+            "daily",
+            "--work",
+            "api",
+            "--policy",
+            "reuse-only",
+            "--clear-profile",
+        ],
+    );
+    assert!(update.status.success(), "stderr:\n{}", stderr(&update));
+
+    let json = run(&home, &["workspace", "list", "--json"]);
+    assert!(json.status.success(), "stderr:\n{}", stderr(&json));
+    let out = stdout(&json);
+    assert!(out.contains("\"policy\": \"reuse-only\""));
+    assert!(!out.contains("\"profile\": \"incident\""));
 
     cleanup_home(home);
 }

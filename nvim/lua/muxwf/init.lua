@@ -44,7 +44,7 @@ local function open_work_from_choice(name, subcommand)
 end
 
 local function choose_work(subcommand)
-  picker.choose(backend.complete_work(), "work", function(choice)
+  picker.choose(picker.jump_items(), "work", function(choice)
     open_work_from_choice(choice, subcommand)
   end)
 end
@@ -98,7 +98,7 @@ function M.open(name)
     return
   end
 
-  picker.choose(picker.work_items(), "work", function(choice)
+  picker.choose(picker.jump_items(), "work", function(choice)
     open_work_from_choice(choice, "open")
     session.ensure_work_has_editor(choice)
   end)
@@ -121,7 +121,7 @@ function M.save(name)
 end
 
 function M.jump()
-  backend.run({ "jump" }, { notify = true })
+  M.open()
 end
 
 function M.current()
@@ -134,6 +134,10 @@ end
 
 function M.work_list()
   show_work_list()
+end
+
+function M.list()
+  M.work_list()
 end
 
 function M.workspace_open(name)
@@ -163,6 +167,14 @@ function M.setup()
   vim.api.nvim_create_user_command("MwOpen", function(opts)
     M.open(opts.args ~= "" and opts.args or nil)
   end, { nargs = "?", complete = complete_works })
+
+  vim.api.nvim_create_user_command("MwSwitch", function(opts)
+    M.open(opts.args ~= "" and opts.args or nil)
+  end, { nargs = "?", complete = complete_works })
+
+  vim.api.nvim_create_user_command("MwList", function()
+    M.list()
+  end, { nargs = 0 })
 
   vim.api.nvim_create_user_command("MwRestore", function(opts)
     M.restore(opts.args ~= "" and opts.args or nil)
@@ -197,7 +209,8 @@ function M.setup()
   end, { nargs = 0 })
 
   if vim.g.muxwf_default_mappings ~= 0 then
-    vim.keymap.set("n", "<leader>mo", M.open, { silent = true, desc = "mw open work" })
+    vim.keymap.set("n", "<leader>mo", M.open, { silent = true, desc = "mw switch work" })
+    vim.keymap.set("n", "<leader>ml", M.list, { silent = true, desc = "mw list works" })
     vim.keymap.set("n", "<leader>mw", M.workspace_open, { silent = true, desc = "mw open workspace" })
   end
 end

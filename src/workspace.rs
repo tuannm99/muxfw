@@ -1,6 +1,7 @@
 use crate::paths::{AppPaths, is_yaml_file};
 use crate::work;
 use anyhow::{Context, Result, bail};
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs;
@@ -11,6 +12,20 @@ pub struct Workspace {
     pub name: String,
     #[serde(default)]
     pub works: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(default)]
+    pub policy: WorkspaceOpenPolicy,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorkspaceOpenPolicy {
+    #[default]
+    Smart,
+    ReuseOnly,
+    RestoreOnly,
+    Fresh,
 }
 
 impl Workspace {
@@ -19,6 +34,13 @@ impl Workspace {
         work::validate_name(&self.name)?;
         if self.works.is_empty() {
             bail!("workspace '{}' has no works", self.name);
+        }
+        if self
+            .profile
+            .as_deref()
+            .is_some_and(|profile| profile.trim().is_empty())
+        {
+            bail!("workspace '{}' has an empty profile", self.name);
         }
         let mut seen = BTreeSet::new();
         for work_name in &self.works {

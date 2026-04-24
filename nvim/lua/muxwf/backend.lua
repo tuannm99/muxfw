@@ -72,6 +72,11 @@ function M.work_list_json()
   return output and util.decode_json_output(output) or nil
 end
 
+function M.jump_list_json()
+  local output = M.run({ "jump", "--json" })
+  return output and util.decode_json_output(output) or nil
+end
+
 function M.workspace_list_json()
   local output = M.run({ "workspace", "list", "--json" })
   return output and util.decode_json_output(output) or nil

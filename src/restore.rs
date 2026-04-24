@@ -33,16 +33,18 @@ pub fn open_work(paths: &AppPaths, work: &Work) -> Result<()> {
     tmux::switch_or_attach(&work.session)
 }
 
-pub fn ensure_work_session(paths: &AppPaths, work: &Work) -> Result<()> {
+pub fn ensure_work_session(paths: &AppPaths, work: &Work) -> Result<bool> {
     if tmux::session_exists(&work.session)? {
-        return Ok(());
+        return Ok(false);
     }
 
     if snapshot::snapshot_exists(paths, &work.name) {
-        return restore_work(paths, work, false);
+        restore_work(paths, work, false)?;
+        return Ok(true);
     }
 
-    create_session_from_work(paths, work, false)
+    create_session_from_work(paths, work, false)?;
+    Ok(false)
 }
 
 pub fn create_session_from_work(paths: &AppPaths, work: &Work, attach: bool) -> Result<()> {

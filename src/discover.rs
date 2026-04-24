@@ -1,11 +1,12 @@
 use crate::snapshot::{Snapshot, WindowSnapshot};
-use crate::work::{self, Work, WorkWindow};
+use crate::work::{self, Work, WorkStatus, WorkWindow};
 use anyhow::Result;
 
 #[derive(Debug, Clone, Default)]
 pub struct WorkMetadata {
     pub on_restore: Option<String>,
     pub description: Option<String>,
+    pub status: WorkStatus,
     pub group: Option<String>,
     pub tags: Vec<String>,
     pub favorite: bool,
@@ -31,6 +32,7 @@ pub fn work_from_snapshot(
         .collect();
     work.on_restore = metadata.on_restore;
     work.description = metadata.description;
+    work.status = metadata.status;
     work.group = metadata.group;
     work.tags = metadata.tags;
     work.favorite = metadata.favorite;
@@ -83,6 +85,7 @@ pub fn apply_add_args_metadata(args: &crate::cli::AddArgs) -> WorkMetadata {
     WorkMetadata {
         on_restore: args.on_restore.clone(),
         description: args.description.clone(),
+        status: args.status,
         group: args.group.clone(),
         tags: args.tags.clone(),
         favorite: args.favorite,
@@ -156,6 +159,7 @@ mod tests {
     fn work_from_snapshot_applies_overrides_and_metadata() {
         let metadata = WorkMetadata {
             description: Some("API".to_string()),
+            status: WorkStatus::Paused,
             group: Some("backend".to_string()),
             tags: vec!["rust".to_string()],
             favorite: true,
@@ -173,6 +177,7 @@ mod tests {
         assert_eq!(work.name, "api");
         assert_eq!(work.root, "~/dev/api");
         assert_eq!(work.description.as_deref(), Some("API"));
+        assert_eq!(work.status, WorkStatus::Paused);
         assert_eq!(work.group.as_deref(), Some("backend"));
         assert_eq!(work.tags, vec!["rust"]);
         assert!(work.favorite);

@@ -28,7 +28,7 @@ Verified locally:
 - `cargo build`
 - CLI smoke tests for filtered `list`, `list --json`, `pin`, `unpin`, `workspace list`, `doctor`, and `list --live`
 
-`open`, `restore`, `jump`, and `workspace open` were not smoke-tested end-to-end in this terminal because they intentionally attach or switch the active tmux client.
+`open`, `restore`, and `workspace open` were not smoke-tested end-to-end in this terminal because they intentionally attach or switch the active tmux client.
 
 Test layout:
 
@@ -146,7 +146,7 @@ mw add current          # generate a work config/snapshot from the current tmux 
 mw add <name>           # manually create a work from the current directory
 mw save [work]          # capture configured/current tmux session
 mw restore <work>       # restore from snapshot, then attach/switch
-mw open <work>          # attach if session exists, else restore, else create
+mw open [work]          # main switch command; no arg opens the ranked picker
 mw close <work>         # kill the tmux session, keeping the snapshot
 mw current              # print the work for the current tmux session
 mw pin <work>           # mark favorite
@@ -155,7 +155,8 @@ mw recent               # list works by last_opened_at descending
 mw show <work>          # print snapshot JSON
 mw doctor               # validate tmux, configs, snapshots, plugins
 mw version              # print CLI version
-mw jump                 # fzf select and open
+mw jump                 # compatibility alias for `mw open`
+mw jump --json          # print ranked works for editor integrations
 mw completion zsh       # print a completion script for bash, zsh, fish, etc.
 mw ws list
 mw ws list --names-only
@@ -260,7 +261,7 @@ mw list --live
 mw list --json
 ```
 
-`mw jump` ranks favorites first, then recently opened works, then live tmux sessions, then the remaining works. It uses `fzf` when available and falls back to a numbered prompt when `fzf` is missing.
+`mw open` without a work name ranks favorites first, then recently opened works, then live tmux sessions, then the remaining works. It uses `fzf` when available and falls back to a numbered prompt when `fzf` is missing. `mw jump` remains as a compatibility alias.
 
 ## Workspace Bundles
 
@@ -318,6 +319,8 @@ Commands:
 
 ```vim
 :MwOpen [work]
+:MwList
+:MwSwitch [work]
 :MwRestore [work]
 :MwSave [work]
 :MwJump
@@ -328,12 +331,13 @@ Commands:
 :MwWorkspaceList
 ```
 
-`MwOpen` and `MwWorkspaceOpen` use `vim.ui.select()` when called without an argument. `MwWorkList` and `MwWorkspaceList` open scratch buffers with `Enter` to open, `r` to refresh, and `q` to close.
+`MwOpen` is the main switch command in Neovim. With no argument it opens the ranked work picker, mirroring `mw open` in the CLI. `MwList` is the primary list view, while `MwSwitch`, `MwJump`, and `MwWorkList` remain as compatibility aliases. `MwWorkspaceOpen` uses `vim.ui.select()` when called without an argument. `MwList` and `MwWorkspaceList` open scratch buffers with `Enter` to open, `r` to refresh, and `q` to close.
 
 Default normal-mode mappings:
 
 ```text
-<leader>mo  prompt/open work
+<leader>mo  open work picker
+<leader>ml  list works
 <leader>mw  prompt/open workspace
 ```
 

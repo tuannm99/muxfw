@@ -11,15 +11,17 @@ mod work;
 mod workspace;
 
 use crate::cli::{
-    AddArgs, Cli, Commands, CreateWorkArgs, CreateWorkspaceArgs, InitArgs, ListArgs, SaveArgs,
-    UpdateWorkArgs, UpdateWorkspaceArgs, WorkCommands, WorkspaceCommands, WorkspaceListArgs,
-    WorkspaceMembersArgs,
+    AddArgs, Cli, Commands, CreateWorkArgs, CreateWorkspaceArgs, InitArgs, JumpArgs, ListArgs,
+    SaveArgs, StaleArgs, UpdateWorkArgs, UpdateWorkspaceArgs, WorkCommands, WorkspaceCommands,
+    WorkspaceListArgs, WorkspaceMembersArgs,
 };
 use crate::paths::{AppPaths, find_binary};
-use crate::work::Work;
+use crate::work::{Work, WorkStatus};
+use crate::workspace::WorkspaceOpenPolicy;
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
 use clap::Parser;
+use serde::Serialize;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::{self, Write};
@@ -44,9 +46,11 @@ fn run() -> Result<i32> {
         Commands::Save(args) => {
             tmux::ensure_tmux_installed()?;
             paths.ensure_state_dirs()?;
-            let work = work_for_save(&paths, args)?;
+            let mut work = work_for_save(&paths, args)?;
             let snapshot = tmux::capture_session(&work.session)?;
             snapshot::write_snapshot(&paths, &work.name, &snapshot)?;
+            work.mark_saved_now();
+            work::write_work(&paths, &work)?;
             println!(
                 "saved '{}' to {}",
                 work.name,
@@ -58,6 +62,7 @@ fn run() -> Result<i32> {
             tmux::ensure_tmux_installed()?;
             let mut work = work::load_work(&paths, &target.name)?;
             restore::restore_work(&paths, &work, false)?;
+            work.mark_restored_now();
             work.mark_opened_now();
             work::write_work(&paths, &work)?;
             restore::open_work(&paths, &work)?;
@@ -65,7 +70,7 @@ fn run() -> Result<i32> {
         }
         Commands::Open(target) => {
             tmux::ensure_tmux_installed()?;
-            open_work_by_name(&paths, &target.name)?;
+            run_open(&paths, target)?;
             Ok(0)
         }
         Commands::Close(target) => {
@@ -86,6 +91,10 @@ fn run() -> Result<i32> {
             print_recent_works(&paths)?;
             Ok(0)
         }
+        Commands::Stale(args) => {
+            print_stale_works(&paths, args)?;
+            Ok(0)
+        }
         Commands::Show(target) => {
             let raw = snapshot::raw_snapshot(&paths, &target.name)?;
             let parsed: snapshot::Snapshot =
@@ -98,9 +107,9 @@ fn run() -> Result<i32> {
             println!("muxwf {}", env!("CARGO_PKG_VERSION"));
             Ok(0)
         }
-        Commands::Jump => {
+        Commands::Jump(args) => {
             tmux::ensure_tmux_installed()?;
-            run_jump(&paths)?;
+            run_jump(&paths, args)?;
             Ok(0)
         }
         Commands::Completion(args) => {
@@ -121,6 +130,10 @@ fn run() -> Result<i32> {
         }
         Commands::Unpin(target) => {
             set_favorite(&paths, &target.name, false)?;
+            Ok(0)
+        }
+        Commands::Archive(target) => {
+            set_work_status(&paths, &target.name, WorkStatus::Archived)?;
             Ok(0)
         }
         Commands::Add(args) => {
@@ -145,6 +158,26 @@ fn run() -> Result<i32> {
 
 fn run_work_command(paths: &AppPaths, command: WorkCommands) -> Result<i32> {
     match command {
+        WorkCommands::Save(args) => {
+            tmux::ensure_tmux_installed()?;
+            paths.ensure_state_dirs()?;
+            let mut work = work_for_save(paths, args)?;
+            let snapshot = tmux::capture_session(&work.session)?;
+            snapshot::write_snapshot(paths, &work.name, &snapshot)?;
+            work.mark_saved_now();
+            work::write_work(paths, &work)?;
+            println!(
+                "saved '{}' to {}",
+                work.name,
+                paths.display_path(&paths.snapshot_file(&work.name))
+            );
+            Ok(0)
+        }
+        WorkCommands::Open(target) => {
+            tmux::ensure_tmux_installed()?;
+            run_open(paths, target)?;
+            Ok(0)
+        }
         WorkCommands::Create(args) => {
             paths.ensure_state_dirs()?;
             let edit = args.edit;
@@ -243,7 +276,7 @@ fn open_workspace(paths: &AppPaths, name: &str) -> Result<()> {
         let mut work = work::load_work(paths, work_name).with_context(|| {
             format!("workspace '{}' references '{}'", workspace.name, work_name)
         })?;
-        prepare_work_session(paths, &mut work)
+        prepare_work_session(paths, &mut work, workspace.policy)
             .with_context(|| format!("failed to open work '{}'", work.name))?;
         println!("ready\t{}\t{}", work.name, work.session);
         opened.push(work);
@@ -260,6 +293,8 @@ fn build_created_workspace(args: CreateWorkspaceArgs) -> Result<workspace::Works
     let workspace = workspace::Workspace {
         name: args.name,
         works: args.works,
+        profile: args.profile,
+        policy: args.policy,
     };
     workspace.validate()?;
     Ok(workspace)
@@ -301,11 +336,33 @@ fn edit_workspace(paths: &AppPaths, name: &str) -> Result<()> {
 fn update_workspace(paths: &AppPaths, args: UpdateWorkspaceArgs) -> Result<()> {
     paths.ensure_state_dirs()?;
     let mut workspace = workspace::load_workspace(paths, &args.name)?;
-    if workspace.works == args.works {
+    let mut changed = false;
+
+    if workspace.works != args.works {
+        workspace.works = args.works;
+        changed = true;
+    }
+    if args.clear_profile && workspace.profile.is_some() {
+        workspace.profile = None;
+        changed = true;
+    }
+    if let Some(profile) = args.profile
+        && workspace.profile.as_deref() != Some(profile.as_str())
+    {
+        workspace.profile = Some(profile);
+        changed = true;
+    }
+    if let Some(policy) = args.policy
+        && workspace.policy != policy
+    {
+        workspace.policy = policy;
+        changed = true;
+    }
+
+    if !changed {
         println!("no changes for workspace '{}'", workspace.name);
         return Ok(());
     }
-    workspace.works = args.works;
     workspace::write_workspace(paths, &workspace)?;
     println!("updated workspace '{}'", workspace.name);
     Ok(())
@@ -373,6 +430,7 @@ fn build_created_work(args: CreateWorkArgs) -> Result<Work> {
         work.on_restore = Some(on_restore);
     }
     work.description = args.description;
+    work.status = args.status;
     work.group = args.group;
     work.tags = args.tags;
     work.favorite = args.favorite;
@@ -387,6 +445,7 @@ fn create_work_args_from_add(args: AddArgs) -> CreateWorkArgs {
         root: args.root,
         on_restore: args.on_restore,
         description: args.description,
+        status: args.status,
         group: args.group,
         tags: args.tags,
         favorite: args.favorite,
@@ -535,6 +594,10 @@ fn update_work(paths: &AppPaths, args: UpdateWorkArgs) -> Result<()> {
         work.description = Some(description);
         changed = true;
     }
+    if let Some(status) = args.status {
+        work.status = status;
+        changed = true;
+    }
     if args.clear_group {
         work.group = None;
         changed = true;
@@ -648,8 +711,27 @@ fn print_recent_works(paths: &AppPaths) -> Result<()> {
             tags: Vec::new(),
             group: None,
             favorite: false,
+            status: None,
             recent: true,
             live: false,
+            stale_days: None,
+        },
+    )
+}
+
+fn print_stale_works(paths: &AppPaths, args: StaleArgs) -> Result<()> {
+    print_work_list(
+        paths,
+        ListArgs {
+            names_only: args.names_only,
+            json: args.json,
+            tags: Vec::new(),
+            group: None,
+            favorite: false,
+            status: None,
+            recent: false,
+            live: false,
+            stale_days: Some(args.days),
         },
     )
 }
@@ -673,8 +755,14 @@ fn filtered_works(paths: &AppPaths, args: &ListArgs) -> Result<Vec<Work>> {
     if args.favorite {
         works.retain(|work| work.favorite);
     }
+    if let Some(status) = args.status {
+        works.retain(|work| work.status == status);
+    }
     if args.recent {
         works.retain(|work| work.last_opened_at.is_some());
+    }
+    if let Some(stale_days) = args.stale_days {
+        works.retain(|work| work.is_stale(stale_days));
     }
     if let Some(live_sessions) = &live_sessions {
         works.retain(|work| live_sessions.contains(&work.session));
@@ -706,9 +794,18 @@ fn print_work_row(work: &Work, names_only: bool) {
     let favorite = if work.favorite { "yes" } else { "-" };
     let description = work.description.as_deref().unwrap_or("-");
     let last_opened_at = format_timestamp(work.last_opened_at.as_ref());
+    let status = format!("{:?}", work.status).to_lowercase();
     println!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-        work.name, work.session, work.root, tags, description, group, favorite, last_opened_at
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        work.name,
+        work.session,
+        work.root,
+        status,
+        tags,
+        description,
+        group,
+        favorite,
+        last_opened_at
     );
 }
 
@@ -717,27 +814,119 @@ fn print_workspace_row(workspace: &workspace::Workspace, names_only: bool) {
         println!("{}", workspace.name);
         return;
     }
-    println!("{}\t{}", workspace.name, workspace.works.join(","));
+    let profile = workspace.profile.as_deref().unwrap_or("-");
+    println!(
+        "{}\t{}\t{}\t{}",
+        workspace.name,
+        profile,
+        format!("{:?}", workspace.policy)
+            .to_lowercase()
+            .replace('_', "-"),
+        workspace.works.join(",")
+    );
+}
+
+fn run_open(paths: &AppPaths, args: crate::cli::OpenArgs) -> Result<()> {
+    if let Some(name) = args.name {
+        return open_work_by_name(paths, &name);
+    }
+    run_jump(
+        paths,
+        JumpArgs {
+            names_only: false,
+            json: false,
+        },
+    )
 }
 
 fn open_work_by_name(paths: &AppPaths, name: &str) -> Result<()> {
+    save_current_work_if_needed(paths, Some(name))?;
     let mut work = work::load_work(paths, name)?;
-    prepare_work_session(paths, &mut work)?;
+    prepare_work_session(paths, &mut work, WorkspaceOpenPolicy::Smart)?;
     restore::open_work(paths, &work)
 }
 
-fn prepare_work_session(paths: &AppPaths, work: &mut Work) -> Result<()> {
-    restore::ensure_work_session(paths, work)?;
+fn save_current_work_if_needed(paths: &AppPaths, target_name: Option<&str>) -> Result<()> {
+    let Ok(current) = current_work(paths) else {
+        return Ok(());
+    };
+    if target_name.is_some_and(|target| target == current.name) {
+        return Ok(());
+    }
+    if !tmux::session_exists(&current.session)? {
+        return Ok(());
+    }
+
+    let snapshot = tmux::capture_session(&current.session)?;
+    let mut current = current;
+    snapshot::write_snapshot(paths, &current.name, &snapshot)?;
+    current.mark_saved_now();
+    work::write_work(paths, &current)?;
+    eprintln!("saved '{}' before switch", current.name);
+    Ok(())
+}
+
+fn prepare_work_session(
+    paths: &AppPaths,
+    work: &mut Work,
+    policy: WorkspaceOpenPolicy,
+) -> Result<()> {
+    match policy {
+        WorkspaceOpenPolicy::Smart => {
+            if restore::ensure_work_session(paths, work)? {
+                work.mark_restored_now();
+            }
+        }
+        WorkspaceOpenPolicy::ReuseOnly => {
+            if !tmux::session_exists(&work.session)? {
+                bail!(
+                    "workspace policy 'reuse-only' requires tmux session '{}' for work '{}'",
+                    work.session,
+                    work.name
+                );
+            }
+        }
+        WorkspaceOpenPolicy::RestoreOnly => {
+            if !tmux::session_exists(&work.session)? {
+                if !snapshot::snapshot_exists(paths, &work.name) {
+                    bail!(
+                        "workspace policy 'restore-only' requires a running session or snapshot for work '{}'",
+                        work.name
+                    );
+                }
+                restore::restore_work(paths, work, false)?;
+                work.mark_restored_now();
+            }
+        }
+        WorkspaceOpenPolicy::Fresh => {
+            if tmux::session_exists(&work.session)? {
+                tmux::kill_session(&work.session).with_context(|| {
+                    format!(
+                        "failed to kill tmux session '{}' for fresh open",
+                        work.session
+                    )
+                })?;
+            }
+            if snapshot::snapshot_exists(paths, &work.name) {
+                restore::restore_work(paths, work, false)?;
+                work.mark_restored_now();
+            } else {
+                restore::create_session_from_work(paths, work, false)?;
+            }
+        }
+    }
     work.mark_opened_now();
     work::write_work(paths, work)?;
     Ok(())
 }
 
 fn close_work(paths: &AppPaths, name: &str) -> Result<()> {
-    let work = work::load_work(paths, name)?;
+    let mut work = work::load_work(paths, name)?;
     if tmux::session_exists(&work.session)? {
         tmux::kill_session(&work.session)
             .with_context(|| format!("failed to kill tmux session '{}'", work.session))?;
+        work.mark_closed_now();
+        work::write_work(paths, &work)?;
         println!("closed '{}' ({})", work.name, work.session);
     } else {
         println!("'{}' is not running ({})", work.name, work.session);
@@ -787,13 +976,62 @@ fn set_favorite(paths: &AppPaths, name: &str, favorite: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_jump(paths: &AppPaths) -> Result<()> {
+fn set_work_status(paths: &AppPaths, name: &str, status: WorkStatus) -> Result<()> {
+    let mut work = work::load_work(paths, name)?;
+    if work.status == status {
+        println!(
+            "'{}' is already {}",
+            work.name,
+            format!("{:?}", status).to_lowercase()
+        );
+        return Ok(());
+    }
+
+    work.status = status;
+    work::write_work(paths, &work)?;
+    println!(
+        "updated '{}' status to {}",
+        work.name,
+        format!("{:?}", status).to_lowercase()
+    );
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct RankedWorkRow {
+    #[serde(flatten)]
+    work: Work,
+    live: bool,
+    jump_rank: u8,
+}
+
+fn run_jump(paths: &AppPaths, args: JumpArgs) -> Result<()> {
     let works = ranked_works(paths)?;
     if works.is_empty() {
         bail!(
             "no works found in {}",
             paths.display_path(&paths.works_dir())
         );
+    }
+
+    if args.json {
+        let rows = works
+            .iter()
+            .map(|(work, live)| RankedWorkRow {
+                work: work.clone(),
+                live: *live,
+                jump_rank: jump_rank(work, *live),
+            })
+            .collect::<Vec<_>>();
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
+
+    if args.names_only {
+        for (work, _) in &works {
+            println!("{}", work.name);
+        }
+        return Ok(());
     }
 
     let selected = if find_binary("fzf").is_some() {

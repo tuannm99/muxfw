@@ -44,6 +44,42 @@ function M.work_items()
   return items
 end
 
+function M.jump_items()
+  local decoded = backend.jump_list_json()
+  if not decoded then
+    return M.work_items()
+  end
+
+  local items = {}
+  for _, item in ipairs(decoded) do
+    items[#items + 1] = {
+      name = item.name,
+      display = string.format(
+        "%s  [%s]  %s%s%s",
+        item.name,
+        item.session,
+        item.favorite and "favorite " or "",
+        item.live and "live " or "",
+        (item.group and item.group ~= "") and ("group:" .. item.group) or ""
+      ),
+      preview = {
+        "name: " .. item.name,
+        "session: " .. item.session,
+        "root: " .. item.root,
+        "status: " .. ((item.status and item.status ~= "") and item.status or "-"),
+        "group: " .. ((item.group and item.group ~= "") and item.group or "-"),
+        "favorite: " .. ((item.favorite and "yes") or "no"),
+        "live: " .. ((item.live and "yes") or "no"),
+        "jump_rank: " .. tostring(item.jump_rank or "-"),
+        "tags: " .. ((item.tags and #item.tags > 0) and table.concat(item.tags, ", ") or "-"),
+        "description: " .. ((item.description and item.description ~= "") and item.description or "-"),
+        "last_opened_at: " .. ((item.last_opened_at and item.last_opened_at ~= "") and item.last_opened_at or "-"),
+      },
+    }
+  end
+  return items
+end
+
 function M.workspace_items()
   local decoded = backend.workspace_list_json()
   if not decoded then
