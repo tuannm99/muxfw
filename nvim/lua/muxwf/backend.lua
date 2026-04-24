@@ -82,4 +82,17 @@ function M.workspace_list_json()
   return output and util.decode_json_output(output) or nil
 end
 
+function M.current_work_name()
+  local output = M.run({ "current" })
+  if not output or output == "" then
+    return nil
+  end
+  local first_line = util.parse_lines(output)[1]
+  if not first_line or first_line == "" then
+    return nil
+  end
+  local cols = vim.split(first_line, "\t", { plain = true })
+  return cols[1] ~= "" and cols[1] or nil
+end
+
 return M

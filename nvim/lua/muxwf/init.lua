@@ -43,6 +43,25 @@ local function open_work_from_choice(name, subcommand)
   backend.run({ subcommand, name }, { notify = true })
 end
 
+local function work_picker_actions()
+  return {
+    {
+      key = "<CR>",
+      label = "keep nvim -> go work",
+      handler = function(name)
+        session.switch_work(name, { close_editor = false })
+      end,
+    },
+    {
+      key = "<C-x>",
+      label = "close nvim -> go work",
+      handler = function(name)
+        session.switch_work(name, { close_editor = true })
+      end,
+    },
+  }
+end
+
 local function choose_work(subcommand)
   picker.choose(picker.jump_items(), "work", function(choice)
     open_work_from_choice(choice, subcommand)
@@ -93,15 +112,18 @@ end
 
 function M.open(name)
   if name and name ~= "" then
-    open_work_from_choice(name, "open")
-    session.ensure_work_has_editor(name)
+    session.switch_work(name, { close_editor = false })
     return
   end
 
-  picker.choose(picker.jump_items(), "work", function(choice)
-    open_work_from_choice(choice, "open")
-    session.ensure_work_has_editor(choice)
-  end)
+  picker.choose(
+    picker.jump_items(),
+    "work",
+    function(choice)
+      session.switch_work(choice, { close_editor = false })
+    end,
+    { actions = work_picker_actions() }
+  )
 end
 
 function M.restore(name)
@@ -210,7 +232,6 @@ function M.setup()
 
   if vim.g.muxwf_default_mappings ~= 0 then
     vim.keymap.set("n", "<leader>mo", M.open, { silent = true, desc = "mw switch work" })
-    vim.keymap.set("n", "<leader>ml", M.list, { silent = true, desc = "mw list works" })
     vim.keymap.set("n", "<leader>mw", M.workspace_open, { silent = true, desc = "mw open workspace" })
   end
 end

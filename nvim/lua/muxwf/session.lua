@@ -8,6 +8,12 @@ local function current_editor_command()
   return util.shell_escape(prog)
 end
 
+local function close_current_editor()
+  vim.schedule(function()
+    vim.cmd("qa")
+  end)
+end
+
 function M.parse_work_session(name)
   local works = backend.work_list_json()
   if not works then
@@ -93,6 +99,21 @@ function M.ensure_work_has_editor(name)
   end
 
   backend.tmux_system({ "send-keys", "-t", target, "Enter" })
+end
+
+function M.switch_work(name, opts)
+  opts = opts or {}
+  local close_editor = opts.close_editor == true
+
+  local output, error_message = backend.run({ "work", "open", name }, { notify = true })
+  if not output and error_message then
+    return false, error_message
+  end
+
+  if close_editor then
+    close_current_editor()
+  end
+  return true, nil
 end
 
 return M
