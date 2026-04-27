@@ -110,6 +110,26 @@ function M.switch_work(name, opts)
     return false, error_message
   end
 
+  M.ensure_work_has_editor(name)
+  if close_editor then
+    close_current_editor()
+  end
+  return true, nil
+end
+
+function M.switch_workspace(name, opts)
+  opts = opts or {}
+  local close_editor = opts.close_editor == true
+
+  local output, error_message = backend.run({ "workspace", "open", name }, { notify = true })
+  if not output and error_message then
+    return false, error_message
+  end
+
+  local first_work = backend.workspace_first_work(name)
+  if first_work and first_work ~= "" then
+    M.ensure_work_has_editor(first_work)
+  end
   if close_editor then
     close_current_editor()
   end

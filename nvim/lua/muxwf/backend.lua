@@ -83,16 +83,30 @@ function M.workspace_list_json()
 end
 
 function M.current_work_name()
-  local output = M.run({ "current" })
-  if not output or output == "" then
+  local code, stdout_text = M.system({ "current" })
+  if code ~= 0 or not stdout_text or stdout_text == "" then
     return nil
   end
-  local first_line = util.parse_lines(output)[1]
+  local first_line = util.parse_lines(stdout_text)[1]
   if not first_line or first_line == "" then
     return nil
   end
   local cols = vim.split(first_line, "\t", { plain = true })
   return cols[1] ~= "" and cols[1] or nil
+end
+
+function M.workspace_first_work(name)
+  local decoded = M.workspace_list_json()
+  if not decoded then
+    return nil
+  end
+
+  for _, item in ipairs(decoded) do
+    if item.name == name then
+      return item.works and item.works[1] or nil
+    end
+  end
+  return nil
 end
 
 return M

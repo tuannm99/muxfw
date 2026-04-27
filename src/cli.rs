@@ -20,46 +20,32 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Save the configured tmux session into ~/.muxwf/snapshots/<work>.json.
-    #[command(hide = true)]
     Save(SaveArgs),
     /// Restore the configured tmux session from its snapshot.
-    #[command(hide = true)]
     Restore(WorkTarget),
     /// Switch or attach to the session, restoring or creating it if needed.
-    #[command(hide = true)]
     Open(OpenArgs),
     /// Kill the configured tmux session while keeping its snapshot.
-    #[command(hide = true)]
     Close(WorkTarget),
     /// Print the work mapped to the current tmux session.
-    #[command(hide = true)]
     Current,
     /// List works.
-    #[command(hide = true)]
     List(ListArgs),
     /// List recently opened works.
-    #[command(hide = true)]
     Recent,
     /// List stale works.
-    #[command(hide = true)]
     Stale(StaleArgs),
     /// Print the saved snapshot JSON for a work.
-    #[command(hide = true)]
     Show(WorkTarget),
     /// Validate the environment and config files.
-    #[command(hide = true)]
     Doctor,
     /// Print the muxwf version.
-    #[command(hide = true)]
     Version,
     /// Compatibility alias for `open` without an explicit work name.
-    #[command(hide = true)]
     Jump(JumpArgs),
     /// Generate shell completion scripts.
-    #[command(hide = true)]
     Completion(CompletionArgs),
     /// Generate work configs and snapshots from all running tmux sessions.
-    #[command(hide = true)]
     Init(InitArgs),
     /// Manage works.
     Work {
@@ -73,22 +59,16 @@ pub enum Commands {
         command: WorkspaceCommands,
     },
     /// Mark a work as favorite.
-    #[command(hide = true)]
     Pin(WorkTarget),
     /// Remove a work from favorites.
-    #[command(hide = true)]
     Unpin(WorkTarget),
     /// Mark a work as archived.
-    #[command(hide = true)]
     Archive(WorkTarget),
     /// Create a work, or use `add current` to add the current tmux session.
-    #[command(hide = true)]
     Add(AddArgs),
     /// Short alias for `work edit`.
-    #[command(hide = true)]
     Edit(WorkTarget),
     /// Short alias for `work delete`.
-    #[command(hide = true)]
     Rm(WorkTarget),
     /// Plugin or alias invocation: muxwf <plugin> <alias> [args...]
     #[command(external_subcommand)]

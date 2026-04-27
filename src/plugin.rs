@@ -34,14 +34,36 @@ impl Plugin {
 }
 
 pub fn execute_external(paths: &AppPaths, argv: &[String]) -> Result<i32> {
-    if argv.len() < 2 {
-        bail!("plugin invocation requires: muxwf <plugin> <alias> [args...]");
+    if argv.is_empty() {
+        bail!("unknown command; run `muxwf --help`");
     }
 
     let plugin_name = &argv[0];
+    let plugins = load_plugins(paths)?;
+
+    if argv.len() < 2 {
+        if let Some(plugin) = plugins.iter().find(|plugin| plugin.name == *plugin_name) {
+            let aliases = plugin
+                .aliases
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ");
+            bail!(
+                "plugin '{}' requires an alias; available aliases: {}",
+                plugin_name,
+                aliases
+            );
+        }
+        bail!(
+            "unknown command or plugin '{}'; run `muxwf --help` or add ~/.muxwf/plugins/{}.yaml to use it",
+            plugin_name,
+            plugin_name
+        );
+    }
+
     let alias = &argv[1];
     let args = &argv[2..];
-    let plugins = load_plugins(paths)?;
     let plugin = plugins
         .iter()
         .find(|plugin| plugin.name == *plugin_name)

@@ -62,6 +62,25 @@ local function work_picker_actions()
   }
 end
 
+local function workspace_picker_actions()
+  return {
+    {
+      key = "<CR>",
+      label = "keep nvim -> go workspace",
+      handler = function(name)
+        session.switch_workspace(name, { close_editor = false })
+      end,
+    },
+    {
+      key = "<C-x>",
+      label = "close nvim -> go workspace",
+      handler = function(name)
+        session.switch_workspace(name, { close_editor = true })
+      end,
+    },
+  }
+end
+
 local function choose_work(subcommand)
   picker.choose(picker.jump_items(), "work", function(choice)
     open_work_from_choice(choice, subcommand)
@@ -164,13 +183,18 @@ end
 
 function M.workspace_open(name)
   if name and name ~= "" then
-    backend.run({ "workspace", "open", name }, { notify = true })
+    session.switch_workspace(name, { close_editor = false })
     return
   end
 
-  picker.choose(picker.workspace_items(), "workspace", function(choice)
-    backend.run({ "workspace", "open", choice }, { notify = true })
-  end)
+  picker.choose(
+    picker.workspace_items(),
+    "workspace",
+    function(choice)
+      session.switch_workspace(choice, { close_editor = false })
+    end,
+    { actions = workspace_picker_actions() }
+  )
 end
 
 function M.workspace_list()
