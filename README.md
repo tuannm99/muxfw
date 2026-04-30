@@ -8,14 +8,23 @@ The design goal is deterministic behavior that is easy to debug. It is intention
 
 This checkout contains a production-usable v2 CLI with this Rust module layout:
 
-- `src/main.rs` routes commands and handles top-level errors.
+- `src/main.rs` is a thin entrypoint for top-level errors.
+- `src/app.rs` parses CLI input and dispatches commands.
 - `src/cli.rs` defines the clap command surface.
+- `src/commands/open.rs` handles `open`, `jump`, ranking, and picker flow.
+- `src/commands/work.rs` handles work CRUD, save/restore lifecycle, and discovery-based add/init flows.
+- `src/commands/workspace.rs` handles workspace CRUD and multi-work open flow.
+- `src/commands/list.rs` handles list/current/recent/stale/pin/archive flows.
+- `src/commands/doctor.rs` validates environment, config, works, workspaces, snapshots, and plugins.
+- `src/context.rs` resolves current work and save context helpers.
+- `src/output.rs` formats list and jump rows.
+- `src/editor.rs` centralizes `$EDITOR` launching.
 - `src/paths.rs` centralizes `~/.muxwf` paths and binary lookup.
-- `src/work.rs` manages work YAML CRUD.
+- `src/work.rs` defines work models and YAML persistence helpers.
+- `src/workspace.rs` defines workspace bundle models and YAML persistence helpers.
 - `src/snapshot.rs` reads, writes, and validates snapshot JSON.
 - `src/tmux.rs` wraps deterministic tmux commands.
 - `src/restore.rs` recreates sessions, windows, panes, cwd, hooks, active window, and active pane.
-- `src/workspace.rs` loads workspace bundles from `~/.muxwf/workspaces/`.
 - `src/plugin.rs` resolves plugin aliases and runs wrapped commands.
 - `src/rules.rs` loads restore hook rules from `config.yaml`.
 
@@ -121,18 +130,18 @@ All state lives under:
 ## Commands
 
 ```bash
-mw work create <name> [--root <path>] [--session <name>] [--group <group>] [--tag <tag>] [--favorite] [--description <text>]
+mw work create <name> [--root <path>] [--session <name>] [--on-restore <cmd>] [--description <text>] [--status <status>] [--group <group>] [--tag <tag>] [--favorite] [--edit]
 mw work edit <name>
-mw work update <name> [--root <path>] [--session <name>] [--group <group>] [--clear-group] [--tag <tag>] [--clear-tags] [--on-restore <cmd>]
+mw work update <name> [--root <path>] [--session <name>] [--on-restore <cmd>] [--description <text>] [--status <status>] [--group <group>] [--clear-group] [--tag <tag>] [--clear-tags]
 mw work delete <name>
-mw work list [--names-only] [--json] [--tag <tag>] [--group <group>] [--favorite] [--recent] [--live]
+mw work list [--names-only] [--json] [--tag <tag>] [--group <group>] [--favorite] [--status <status>] [--recent] [--live] [--stale-days <days>]
 ```
 
 Short aliases:
 
 ```bash
 mw add <name>
-mw add current [--name <work>] [--group <group>] [--tag <tag>] [--favorite] [--description <text>]
+mw add current [--name <work>] [--root <path>] [--on-restore <cmd>] [--description <text>] [--status <status>] [--group <group>] [--tag <tag>] [--favorite] [--edit]
 mw edit <name>
 mw rm <name>
 mw list
