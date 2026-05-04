@@ -48,16 +48,24 @@ pub fn print_workspace_row(workspace: &crate::workspace::Workspace, names_only: 
     );
 }
 
-pub fn format_jump_row(work: &Work, live: bool) -> String {
-    let favorite = if work.favorite { "favorite" } else { "-" };
-    let live = if live { "live" } else { "-" };
-    let group = work.group.as_deref().unwrap_or("-");
-    let last_opened_at = format_timestamp(work.last_opened_at.as_ref());
-    let description = work.description.as_deref().unwrap_or("-");
-    format!(
-        "{}\t{}\t{}\t{}\t{}\t{}",
-        work.name, favorite, live, group, last_opened_at, description
-    )
+pub fn format_jump_row(target: &crate::commands::open::JumpTarget) -> String {
+    match target {
+        crate::commands::open::JumpTarget::Work { work, live } => {
+            let tracked = "tracked";
+            let favorite = if work.favorite { "favorite" } else { "-" };
+            let live = if *live { "live" } else { "-" };
+            let group = work.group.as_deref().unwrap_or("-");
+            let last_opened_at = format_timestamp(work.last_opened_at.as_ref());
+            let description = work.description.as_deref().unwrap_or("-");
+            format!(
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                work.name, work.session, tracked, favorite, live, group, last_opened_at, description
+            )
+        }
+        crate::commands::open::JumpTarget::LiveSession { session } => {
+            format!("{session}\t{session}\tuntracked\t-\tlive\t-\t-\t-")
+        }
+    }
 }
 
 pub fn format_timestamp(value: Option<&DateTime<Utc>>) -> String {

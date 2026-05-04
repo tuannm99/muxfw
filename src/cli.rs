@@ -191,6 +191,8 @@ pub enum WorkCommands {
     Save(SaveArgs),
     /// Switch or attach to the session, restoring or creating it if needed.
     Open(OpenArgs),
+    /// Create a managed work and snapshot from a running tmux session.
+    ImportSession(ImportSessionArgs),
     /// Create a work YAML file.
     Create(CreateWorkArgs),
     /// Open a work YAML file in $EDITOR.
@@ -335,6 +337,48 @@ pub struct AddArgs {
     pub session: Option<String>,
 
     /// Work root; defaults to the current directory or the discovered session cwd.
+    #[arg(long)]
+    pub root: Option<String>,
+
+    /// Command run in restored panes unless a per-cwd rule is used.
+    #[arg(long)]
+    pub on_restore: Option<String>,
+
+    /// Human-readable description.
+    #[arg(long)]
+    pub description: Option<String>,
+
+    /// Lifecycle status.
+    #[arg(long, value_enum, default_value_t = WorkStatus::Active)]
+    pub status: WorkStatus,
+
+    /// Group name.
+    #[arg(long)]
+    pub group: Option<String>,
+
+    /// Tag; can be passed multiple times.
+    #[arg(long = "tag")]
+    pub tags: Vec<String>,
+
+    /// Create as a favorite work.
+    #[arg(long)]
+    pub favorite: bool,
+
+    /// Open the created YAML file in $EDITOR.
+    #[arg(long)]
+    pub edit: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ImportSessionArgs {
+    /// tmux session name to import.
+    pub session: String,
+
+    /// Work name override; defaults to a sanitized session name.
+    #[arg(long)]
+    pub name: Option<String>,
+
+    /// Work root; defaults to the imported session active pane cwd.
     #[arg(long)]
     pub root: Option<String>,
 

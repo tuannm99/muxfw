@@ -48,15 +48,26 @@ local function work_picker_actions()
     {
       key = "<CR>",
       label = "keep nvim -> go work",
-      handler = function(name)
-        session.switch_work(name, { close_editor = false })
+      handler = function(item)
+        session.switch_item(item, { close_editor = false })
       end,
     },
     {
       key = "<C-x>",
       label = "close nvim -> go work",
-      handler = function(name)
-        session.switch_work(name, { close_editor = true })
+      handler = function(item)
+        session.switch_item(item, { close_editor = true })
+      end,
+    },
+    {
+      key = "<C-a>",
+      label = "track session -> create work + snapshot",
+      handler = function(item)
+        if type(item) == "table" and item.kind == "live_session" then
+          session.track_tmux_session(item)
+          return
+        end
+        util.notify("selected item is already tracked", vim.log.levels.INFO)
       end,
     },
   }
@@ -67,23 +78,23 @@ local function workspace_picker_actions()
     {
       key = "<CR>",
       label = "keep nvim -> go workspace",
-      handler = function(name)
-        session.switch_workspace(name, { close_editor = false })
+      handler = function(item)
+        session.switch_workspace(item.name or item, { close_editor = false })
       end,
     },
     {
       key = "<C-x>",
       label = "close nvim -> go workspace",
-      handler = function(name)
-        session.switch_workspace(name, { close_editor = true })
+      handler = function(item)
+        session.switch_workspace(item.name or item, { close_editor = true })
       end,
     },
   }
 end
 
 local function choose_work(subcommand)
-  picker.choose(picker.jump_items(), "work", function(choice)
-    open_work_from_choice(choice, subcommand)
+  picker.choose(picker.work_items(), "work", function(item)
+    open_work_from_choice(item.name or item, subcommand)
   end)
 end
 
@@ -131,15 +142,15 @@ end
 
 function M.open(name)
   if name and name ~= "" then
-    session.switch_work(name, { close_editor = false })
+    session.switch_target(name, { close_editor = false })
     return
   end
 
   picker.choose(
     picker.jump_items(),
     "work",
-    function(choice)
-      session.switch_work(choice, { close_editor = false })
+    function(item)
+      session.switch_item(item, { close_editor = false })
     end,
     { actions = work_picker_actions() }
   )
@@ -190,8 +201,8 @@ function M.workspace_open(name)
   picker.choose(
     picker.workspace_items(),
     "workspace",
-    function(choice)
-      session.switch_workspace(choice, { close_editor = false })
+    function(item)
+      session.switch_workspace(item.name or item, { close_editor = false })
     end,
     { actions = workspace_picker_actions() }
   )
@@ -199,6 +210,10 @@ end
 
 function M.workspace_list()
   show_workspace_list()
+end
+
+local function complete_jump_targets(_, _, _)
+  return backend.complete_jump_target()
 end
 
 local function complete_works(_, _, _)
@@ -212,11 +227,11 @@ end
 function M.setup()
   vim.api.nvim_create_user_command("MwOpen", function(opts)
     M.open(opts.args ~= "" and opts.args or nil)
-  end, { nargs = "?", complete = complete_works })
+  end, { nargs = "?", complete = complete_jump_targets })
 
   vim.api.nvim_create_user_command("MwSwitch", function(opts)
     M.open(opts.args ~= "" and opts.args or nil)
-  end, { nargs = "?", complete = complete_works })
+  end, { nargs = "?", complete = complete_jump_targets })
 
   vim.api.nvim_create_user_command("MwList", function()
     M.list()

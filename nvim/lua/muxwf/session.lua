@@ -14,7 +14,11 @@ local function close_current_editor()
   end)
 end
 
-function M.parse_work_session(name)
+local function default_track_name(session_name)
+  return session_name
+end
+
+local function find_work(name)
   local works = backend.work_list_json()
   if not works then
     return nil
@@ -22,10 +26,15 @@ function M.parse_work_session(name)
 
   for _, item in ipairs(works) do
     if item.name == name then
-      return item.session
+      return item
     end
   end
   return nil
+end
+
+function M.parse_work_session(name)
+  local work = find_work(name)
+  return work and work.session or nil
 end
 
 function M.session_has_editor(session)
@@ -115,6 +124,80 @@ function M.switch_work(name, opts)
     close_current_editor()
   end
   return true, nil
+end
+
+function M.switch_tmux_session(session_name, opts)
+  opts = opts or {}
+  local close_editor = opts.close_editor == true
+  local tmux_args
+
+  if vim.env.TMUX and vim.env.TMUX ~= "" then
+    tmux_args = { "switch-client", "-t", session_name }
+  else
+    tmux_args = { "attach-session", "-t", session_name }
+  end
+
+  local code, _, stderr_text = backend.tmux_system(tmux_args)
+  if code ~= 0 then
+    local error_message = stderr_text ~= "" and stderr_text or ("failed to switch to tmux session " .. session_name)
+    util.notify(error_message, vim.log.levels.ERROR)
+    return false, error_message
+  end
+
+  if close_editor then
+    close_current_editor()
+  end
+  return true, nil
+end
+
+function M.switch_target(name, opts)
+  if find_work(name) then
+    return M.switch_work(name, opts)
+  end
+
+  for _, session_name in ipairs(backend.tmux_list_sessions()) do
+    if session_name == name then
+      return M.switch_tmux_session(session_name, opts)
+    end
+  end
+
+  local error_message = "unknown work or tmux session: " .. name
+  util.notify(error_message, vim.log.levels.ERROR)
+  return false, error_message
+end
+
+function M.switch_item(item, opts)
+  if type(item) ~= "table" then
+    return M.switch_target(item, opts)
+  end
+  if item.kind == "live_session" then
+    return M.switch_tmux_session(item.session or item.name, opts)
+  end
+  return M.switch_work(item.name, opts)
+end
+
+function M.track_tmux_session(item)
+  local session_name = type(item) == "table" and (item.session or item.name) or item
+  if not session_name or session_name == "" then
+    util.notify("no tmux session selected to track", vim.log.levels.WARN)
+    return
+  end
+
+  vim.ui.input({
+    prompt = "muxwf work name: ",
+    default = default_track_name(session_name),
+  }, function(input)
+    if input == nil then
+      return
+    end
+
+    local work_name = vim.trim(input)
+    local args = { "work", "import-session", session_name }
+    if work_name ~= "" then
+      vim.list_extend(args, { "--name", work_name })
+    end
+    backend.run(args, { notify = true })
+  end)
 end
 
 function M.switch_workspace(name, opts)

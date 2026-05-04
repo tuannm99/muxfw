@@ -56,6 +56,7 @@ fn run_work_command(paths: &AppPaths, command: WorkCommands) -> Result<i32> {
     match command {
         WorkCommands::Save(args) => work::save(paths, args),
         WorkCommands::Open(args) => open::open_command(paths, args),
+        WorkCommands::ImportSession(args) => work::import_session(paths, args),
         WorkCommands::Create(args) => work::create(paths, args),
         WorkCommands::Edit(target) => work::edit(paths, &target.name),
         WorkCommands::Update(args) => work::update(paths, args),

@@ -57,8 +57,58 @@ fn jump_json_returns_ranked_work_rows() {
 
     let out = stdout(&output);
     assert!(out.contains("\"name\": \"api\""));
+    assert!(out.contains("\"kind\": \"work\""));
+    assert!(out.contains("\"tracked\": true"));
     assert!(out.contains("\"jump_rank\": 0"));
     assert!(out.contains("\"live\": false"));
+
+    cleanup_home(home);
+}
+
+#[test]
+fn jump_json_includes_untracked_live_tmux_sessions() {
+    let home = temp_home("jump-json-live-session");
+    let fake_bin_dir = home.join("bin");
+    fs::create_dir_all(&fake_bin_dir).unwrap();
+
+    let create = run(&home, &["work", "create", "api", "--root", "/tmp"]);
+    assert!(
+        create.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&create),
+        stderr(&create)
+    );
+
+    let tmux_script = fake_bin_dir.join("tmux");
+    fs::write(
+        &tmux_script,
+        "#!/bin/sh\nif [ \"$1\" = \"list-sessions\" ]; then\n  printf 'api\\nadhoc\\n'\n  exit 0\nfi\nexit 1\n",
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&tmux_script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&tmux_script, perms).unwrap();
+    }
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let path = format!("{}:{}", fake_bin_dir.display(), current_path);
+    let output = run_with_path(&home, &path, &["jump", "--json"]);
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&output),
+        stderr(&output)
+    );
+
+    let out = stdout(&output);
+    assert!(out.contains("\"kind\": \"live_session\""));
+    assert!(out.contains("\"tracked\": false"));
+    assert!(out.contains("\"name\": \"adhoc\""));
+    assert!(out.contains("\"session\": \"adhoc\""));
 
     cleanup_home(home);
 }
@@ -200,6 +250,52 @@ fn open_named_restores_snapshot_when_tmux_session_is_missing() {
     assert!(
         tmux_calls.contains("attach-session -t api-session")
             || tmux_calls.contains("switch-client -t api-session")
+    );
+
+    cleanup_home(home);
+}
+
+#[test]
+fn open_named_untracked_live_session_attaches_directly() {
+    let home = temp_home("open-live-session");
+    let fake_bin_dir = home.join("bin");
+    fs::create_dir_all(&fake_bin_dir).unwrap();
+
+    let tmux_log = home.join("tmux.log");
+    let tmux_script = fake_bin_dir.join("tmux");
+    fs::write(
+        &tmux_script,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{log}\"\nif [ \"$1\" = \"has-session\" ] && [ \"$3\" = \"adhoc\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"attach-session\" ] && [ \"$3\" = \"adhoc\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"switch-client\" ] && [ \"$3\" = \"adhoc\" ]; then\n  exit 0\nfi\nexit 1\n",
+            log = tmux_log.display()
+        ),
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&tmux_script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&tmux_script, perms).unwrap();
+    }
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let path = format!("{}:{}", fake_bin_dir.display(), current_path);
+    let output = run_with_path(&home, &path, &["open", "adhoc"]);
+
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        stdout(&output),
+        stderr(&output)
+    );
+
+    let tmux_calls = fs::read_to_string(&tmux_log).unwrap();
+    assert!(tmux_calls.contains("has-session -t adhoc"));
+    assert!(
+        tmux_calls.contains("attach-session -t adhoc")
+            || tmux_calls.contains("switch-client -t adhoc")
     );
 
     cleanup_home(home);

@@ -130,18 +130,6 @@ install_zsh_fpath() {
     } >> "$zshenv"
 }
 
-install_neovim_plugin() {
-    if ! need_cmd nvim; then
-        info "nvim not found; skipping Neovim plugin install"
-        return 0
-    fi
-    plugin_dir="$HOME/.config/nvim/pack/muxwf/start/muxwf.nvim"
-    mkdir -p "$plugin_dir/plugin"
-    rm -f "$plugin_dir/plugin/muxwf.vim"
-    cp "$INSTALL_DIR/nvim/plugin/muxwf.lua" "$plugin_dir/plugin/muxwf.lua"
-    info "installed Neovim plugin at $plugin_dir"
-}
-
 print_next_steps() {
     info "installed: $INSTALL_ROOT/bin/muxwf and $INSTALL_ROOT/bin/mw"
     if ! printf '%s' ":$PATH:" | grep -q ":$INSTALL_ROOT/bin:"; then
@@ -150,9 +138,6 @@ print_next_steps() {
     fi
     if [ -f "$HOME/.local/share/zsh/site-functions/_mw" ]; then
         info "zsh completions installed at $HOME/.local/share/zsh/site-functions/_mw"
-    fi
-    if [ -f "$HOME/.config/nvim/pack/muxwf/start/muxwf.nvim/plugin/muxwf.lua" ]; then
-        info "Neovim commands: :MwOpen, :MwJump, :MwWorkspaceOpen, :MwWorkspaceList"
     fi
     info "restart zsh with: exec zsh"
     info "run: mw doctor"
@@ -164,5 +149,4 @@ checkout_repo
 install_muxwf
 install_completions
 install_zsh_fpath
-install_neovim_plugin
 print_next_steps

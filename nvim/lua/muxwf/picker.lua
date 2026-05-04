@@ -4,6 +4,9 @@ local util = require("muxwf.util")
 local M = {}
 
 local function item_name(item)
+  if type(item) == "table" and type(item.name) == "string" then
+    return item.name
+  end
   return type(item) == "table" and item.name or item
 end
 
@@ -12,8 +15,13 @@ local function item_display(item)
 end
 
 local function item_preview(item)
-  if type(item) == "table" and type(item.preview) == "table" then
-    return item.preview
+  if type(item) == "table" then
+    if type(item.preview) == "function" then
+      return item.preview(item)
+    end
+    if type(item.preview) == "table" then
+      return item.preview
+    end
   end
   return { item_name(item) }
 end
@@ -23,8 +31,8 @@ local function default_actions(label, on_choice)
     {
       key = "<CR>",
       label = "keep nvim -> go work",
-      handler = function(name)
-        on_choice(name, { close_editor = false })
+      handler = function(item)
+        on_choice(item, { close_editor = false })
       end,
     },
   }
@@ -70,45 +78,113 @@ end
 
 function M.jump_items()
   local decoded = backend.jump_list_json()
-  if not decoded then
-    return M.work_items()
+  local current_name = backend.current_work_name()
+  local current_session = backend.current_tmux_session_name()
+  local live_sessions = {}
+  for _, session_name in ipairs(backend.tmux_list_sessions()) do
+    live_sessions[session_name] = true
   end
 
-  local current_name = backend.current_work_name()
+  if not decoded then
+    decoded = backend.work_list_json() or {}
+  end
+
   local items = {}
+  local known_sessions = {}
   for _, item in ipairs(decoded) do
-    if current_name and item.name == current_name then
-      goto continue
+    if item.kind == "live_session" then
+      local session = item.session or item.name
+      if session and session ~= "" then
+        known_sessions[session] = true
+        if session ~= current_session then
+          items[#items + 1] = {
+            kind = "live_session",
+            tracked = false,
+            name = item.name or session,
+            session = session,
+            display = string.format("%s  [live session]  untracked", session),
+            preview = function()
+              local lines = backend.tmux_session_preview(session)
+              vim.list_extend(lines, {
+                "",
+                "actions:",
+                "  <CR>   keep nvim -> go session",
+                "  <C-x>  close nvim -> go session",
+                "  <C-a>  track session -> create work + snapshot",
+              })
+              return lines
+            end,
+          }
+        end
+      end
+    else
+      local work = item
+      if not (current_name and work.name == current_name) then
+        known_sessions[work.session] = true
+        items[#items + 1] = {
+          kind = "work",
+          name = work.name,
+          session = work.session,
+          display = string.format(
+            "%s  [%s]  %s%s%s",
+            work.name,
+            work.session,
+            work.favorite and "favorite " or "",
+            live_sessions[work.session] and "live " or "",
+            (work.group and work.group ~= "") and ("group:" .. work.group) or ""
+          ),
+          preview = function()
+            local lines = {
+              "config:",
+              "  name: " .. work.name,
+              "  session: " .. work.session,
+              "  root: " .. work.root,
+              "  status: " .. ((work.status and work.status ~= "") and work.status or "-"),
+              "  group: " .. ((work.group and work.group ~= "") and work.group or "-"),
+              "  favorite: " .. ((work.favorite and "yes") or "no"),
+              "  live: " .. ((live_sessions[work.session] and "yes") or "no"),
+              "  jump_rank: " .. tostring(work.jump_rank or "-"),
+              "  tags: " .. ((work.tags and #work.tags > 0) and table.concat(work.tags, ", ") or "-"),
+              "  description: " .. ((work.description and work.description ~= "") and work.description or "-"),
+              "  last_opened_at: " .. ((work.last_opened_at and work.last_opened_at ~= "") and work.last_opened_at or "-"),
+            }
+            if live_sessions[work.session] then
+              vim.list_extend(lines, { "" })
+              vim.list_extend(lines, backend.tmux_session_preview(work.session))
+            end
+            vim.list_extend(lines, {
+              "",
+              "actions:",
+              "  <CR>   keep nvim -> go work",
+              "  <C-x>  close nvim -> go work",
+            })
+            return lines
+          end,
+        }
+      end
     end
-    items[#items + 1] = {
-      name = item.name,
-      display = string.format(
-        "%s  [%s]  %s%s%s",
-        item.name,
-        item.session,
-        item.favorite and "favorite " or "",
-        item.live and "live " or "",
-        (item.group and item.group ~= "") and ("group:" .. item.group) or ""
-      ),
-      preview = {
-        "name: " .. item.name,
-        "session: " .. item.session,
-        "root: " .. item.root,
-        "status: " .. ((item.status and item.status ~= "") and item.status or "-"),
-        "group: " .. ((item.group and item.group ~= "") and item.group or "-"),
-        "favorite: " .. ((item.favorite and "yes") or "no"),
-        "live: " .. ((item.live and "yes") or "no"),
-        "jump_rank: " .. tostring(item.jump_rank or "-"),
-        "tags: " .. ((item.tags and #item.tags > 0) and table.concat(item.tags, ", ") or "-"),
-        "description: " .. ((item.description and item.description ~= "") and item.description or "-"),
-        "last_opened_at: " .. ((item.last_opened_at and item.last_opened_at ~= "") and item.last_opened_at or "-"),
-        "",
-        "actions:",
-        "  <CR>   keep nvim -> go work",
-        "  <C-x>  close nvim -> go work",
-      },
-    }
-    ::continue::
+  end
+
+  for _, session_name in ipairs(backend.tmux_list_sessions()) do
+    local session = session_name
+    if not known_sessions[session_name] and session_name ~= current_session then
+      items[#items + 1] = {
+        kind = "live_session",
+        name = session,
+        session = session,
+        display = string.format("%s  [live session]", session),
+        preview = function()
+          local lines = backend.tmux_session_preview(session)
+          vim.list_extend(lines, {
+            "",
+            "actions:",
+            "  <CR>   keep nvim -> go session",
+            "  <C-x>  close nvim -> go session",
+          })
+          return lines
+        end,
+      }
+    end
   end
   return items
 end
@@ -141,12 +217,11 @@ function M.select_from_items(items, label, on_choice, opts)
   local actions = picker_actions(label, on_choice, opts and opts.actions)
 
   vim.ui.select(items, { prompt = "muxwf " .. label .. ":" }, function(choice)
-    local name = choice and item_name(choice) or nil
-    if not (name and name ~= "") then
+    if not choice then
       return
     end
     if #actions == 1 then
-      actions[1].handler(name)
+      actions[1].handler(choice)
       return
     end
 
@@ -157,7 +232,7 @@ function M.select_from_items(items, label, on_choice, opts)
       end,
     }, function(action)
       if action and action.handler then
-        action.handler(name)
+        action.handler(choice)
       end
     end)
   end)
@@ -180,7 +255,7 @@ function M.select_with_telescope(items, label, on_choice, opts)
     local selection = action_state.get_selected_entry()
     actions.close(prompt_bufnr)
     if selection and selection.value and action and action.handler then
-      action.handler(item_name(selection.value))
+      action.handler(selection.value)
     end
   end
 

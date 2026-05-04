@@ -79,7 +79,6 @@ The installer:
 - clones or updates the repo at `~/.local/src/muxwf`
 - installs `muxwf` into `~/.local/bin/muxwf` and symlinks `mw`
 - installs shell completions for bash, zsh, and fish under your home directory
-- installs a small Neovim plugin when `nvim` is available
 
 If `~/.local/bin` is not in `PATH`, add this to your shell profile:
 
@@ -132,6 +131,7 @@ All state lives under:
 ```bash
 mw work create <name> [--root <path>] [--session <name>] [--on-restore <cmd>] [--description <text>] [--status <status>] [--group <group>] [--tag <tag>] [--favorite] [--edit]
 mw work edit <name>
+mw work import-session <session> [--name <work>] [--root <path>] [--on-restore <cmd>] [--description <text>] [--status <status>] [--group <group>] [--tag <tag>] [--favorite] [--edit]
 mw work update <name> [--root <path>] [--session <name>] [--on-restore <cmd>] [--description <text>] [--status <status>] [--group <group>] [--clear-group] [--tag <tag>] [--clear-tags]
 mw work delete <name>
 mw work list [--names-only] [--json] [--tag <tag>] [--group <group>] [--favorite] [--status <status>] [--recent] [--live] [--stale-days <days>]
@@ -152,6 +152,7 @@ Core workflow:
 ```bash
 mw init                 # generate work configs/snapshots from all running tmux sessions
 mw add current          # generate a work config/snapshot from the current tmux session
+mw work import-session <session>   # track a running tmux session as a work and save its snapshot
 mw add <name>           # manually create a work from the current directory
 mw save [work]          # capture configured/current tmux session
 mw restore <work>       # restore from snapshot, then attach/switch
@@ -270,7 +271,7 @@ mw list --live
 mw list --json
 ```
 
-`mw open` without a work name ranks favorites first, then recently opened works, then live tmux sessions, then the remaining works. It uses `fzf` when available and falls back to a numbered prompt when `fzf` is missing. `mw jump` remains as a compatibility alias.
+`mw open` without a work name ranks favorites first, then recently opened works, then live tmux sessions, then the remaining works. Running tmux sessions that do not have a work config yet are included as untracked live sessions. Selecting one of those entries switches directly to that tmux session instead of restoring a managed work. It uses `fzf` when available and falls back to a numbered prompt when `fzf` is missing. `mw jump` remains as a compatibility alias.
 
 ## Workspace Bundles
 
@@ -287,11 +288,15 @@ works:
 
 ## Neovim
 
-The installer copies a native package to:
+Recommended: install `muxwf.nvim` with a plugin manager such as `lazy.nvim`.
+
+With `lazy.nvim`, the plugin is cloned under Neovim's data directory, typically:
 
 ```text
-~/.config/nvim/pack/muxwf/start/muxwf.nvim/plugin/muxwf.lua
+~/.local/share/nvim/lazy/muxwf
 ```
+
+You do not `require()` that path directly. `lazy.nvim` adds the plugin to Neovim's `runtimepath`, then Neovim discovers `plugin/muxwf.lua` automatically.
 
 `lazy.nvim` example:
 
@@ -322,6 +327,10 @@ The installer copies a native package to:
 }
 ```
 
+That `dir` must be the Neovim plugin root containing `plugin/` and `lua/`, not the repository root.
+
+`pack/*` packages are no longer installed by `install.sh`. They still work in plain Neovim, but if you already use `lazy.nvim`, they add a second installation path and make local development less predictable.
+
 The Neovim extension now uses a split layout under `nvim/lua/muxwf/`. See `nvim/README.md` for the module map.
 
 Commands:
@@ -340,7 +349,15 @@ Commands:
 :MwWorkspaceList
 ```
 
-`MwOpen` is the main switch command in Neovim. With no argument it opens the ranked work picker, mirroring `mw open` in the CLI. `MwList` is the primary list view, while `MwSwitch`, `MwJump`, and `MwWorkList` remain as compatibility aliases. `MwWorkspaceOpen` uses `vim.ui.select()` when called without an argument. `MwList` and `MwWorkspaceList` open scratch buffers with `Enter` to open, `r` to refresh, and `q` to close.
+`MwOpen` is the main switch command in Neovim. With no argument it opens the ranked picker, mirroring `mw open` in the CLI, including untracked live tmux sessions. Telescope preview shows work config details for tracked entries and tmux session details for live entries. `MwList` is the primary list view, while `MwSwitch`, `MwJump`, and `MwWorkList` remain as compatibility aliases. `MwWorkspaceOpen` uses `vim.ui.select()` when called without an argument. `MwList` and `MwWorkspaceList` open scratch buffers with `Enter` to open, `r` to refresh, and `q` to close.
+
+Telescope actions in `MwOpen`:
+
+```text
+<CR>   switch to the selected work or session
+<C-x>  switch and close the current Neovim instance
+<C-a>  for an untracked live session, create a work + snapshot from it
+```
 
 Default normal-mode mappings:
 
@@ -429,7 +446,7 @@ Or use the built-in wrapper:
 mw jump
 ```
 
-If `fzf` is not installed, `mw jump` prints the ranked list and accepts either a number or a work name.
+If `fzf` is not installed, `mw jump` prints the ranked list and accepts either a number, a work name, or an untracked live tmux session name.
 
 ## Restore Behavior
 

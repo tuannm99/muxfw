@@ -1,4 +1,4 @@
-use crate::cli::{AddArgs, CreateWorkArgs, InitArgs, SaveArgs, UpdateWorkArgs};
+use crate::cli::{AddArgs, CreateWorkArgs, ImportSessionArgs, InitArgs, SaveArgs, UpdateWorkArgs};
 use crate::context;
 use crate::editor;
 use crate::paths::AppPaths;
@@ -67,6 +67,28 @@ pub fn add(paths: &AppPaths, args: AddArgs) -> Result<i32> {
     )
     .with_context(|| format!("failed to generate work config from session '{}'", session))?;
     create_discovered_work(paths, work, &snapshot, args.edit, false)?;
+    Ok(0)
+}
+
+pub fn import_session(paths: &AppPaths, args: ImportSessionArgs) -> Result<i32> {
+    paths.ensure_state_dirs()?;
+    tmux::ensure_tmux_installed()?;
+    create_work_from_session(
+        paths,
+        &args.session,
+        args.name,
+        args.root,
+        crate::discover::WorkMetadata {
+            on_restore: args.on_restore,
+            description: args.description,
+            status: args.status,
+            group: args.group,
+            tags: args.tags,
+            favorite: args.favorite,
+        },
+        args.edit,
+        false,
+    )?;
     Ok(0)
 }
 
@@ -269,6 +291,22 @@ fn init_from_running_sessions(paths: &AppPaths, args: InitArgs) -> Result<()> {
 
     println!("init complete: {created} created, {skipped} skipped");
     Ok(())
+}
+
+fn create_work_from_session(
+    paths: &AppPaths,
+    session: &str,
+    name_override: Option<String>,
+    root_override: Option<String>,
+    metadata: crate::discover::WorkMetadata,
+    edit: bool,
+    overwrite: bool,
+) -> Result<bool> {
+    let snapshot = tmux::capture_session(session)
+        .with_context(|| format!("failed to capture tmux session '{}'", session))?;
+    let work = crate::discover::work_from_snapshot(&snapshot, name_override, root_override, metadata)
+        .with_context(|| format!("failed to generate work config from session '{}'", session))?;
+    create_discovered_work(paths, work, &snapshot, edit, overwrite)
 }
 
 fn create_discovered_work(

@@ -12,17 +12,75 @@ use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
 #[derive(Debug, Serialize)]
-struct RankedWorkRow {
-    #[serde(flatten)]
-    work: Work,
-    live: bool,
-    jump_rank: u8,
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum JumpTargetRow {
+    Work {
+        tracked: bool,
+        #[serde(flatten)]
+        work: Work,
+        live: bool,
+        jump_rank: u8,
+    },
+    LiveSession {
+        tracked: bool,
+        name: String,
+        session: String,
+        live: bool,
+        jump_rank: u8,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum JumpTarget {
+    Work { work: Work, live: bool },
+    LiveSession { session: String },
+}
+
+impl JumpTarget {
+    fn selection_name(&self) -> &str {
+        match self {
+            Self::Work { work, .. } => &work.name,
+            Self::LiveSession { session } => session,
+        }
+    }
+
+    fn session_name(&self) -> &str {
+        match self {
+            Self::Work { work, .. } => &work.session,
+            Self::LiveSession { session } => session,
+        }
+    }
+
+    fn jump_rank(&self) -> u8 {
+        match self {
+            Self::Work { work, live } => jump_rank(work, *live),
+            Self::LiveSession { .. } => 2,
+        }
+    }
+
+    fn to_row(&self) -> JumpTargetRow {
+        match self {
+            Self::Work { work, live } => JumpTargetRow::Work {
+                tracked: true,
+                work: work.clone(),
+                live: *live,
+                jump_rank: self.jump_rank(),
+            },
+            Self::LiveSession { session } => JumpTargetRow::LiveSession {
+                tracked: false,
+                name: session.clone(),
+                session: session.clone(),
+                live: true,
+                jump_rank: self.jump_rank(),
+            },
+        }
+    }
 }
 
 pub fn open_command(paths: &AppPaths, args: OpenArgs) -> Result<i32> {
     tmux::ensure_tmux_installed()?;
     if let Some(name) = args.name {
-        open_work_by_name(paths, &name)?;
+        open_target_by_name(paths, &name)?;
     } else {
         run_jump(
             paths,
@@ -46,6 +104,22 @@ pub fn open_work_by_name(paths: &AppPaths, name: &str) -> Result<()> {
     let mut work = work::load_work(paths, name)?;
     prepare_work_session(paths, &mut work, WorkspaceOpenPolicy::Smart)?;
     tmux::switch_or_attach(&work.session)
+}
+
+pub fn open_target_by_name(paths: &AppPaths, name: &str) -> Result<()> {
+    if paths.work_file(name).exists() {
+        return open_work_by_name(paths, name);
+    }
+
+    if tmux::session_exists(name)? {
+        crate::commands::work::save_current_work_if_needed(paths, None)?;
+        return tmux::switch_or_attach(name);
+    }
+
+    bail!(
+        "unknown work or live tmux session '{}'; create a work first or start that session",
+        name
+    );
 }
 
 pub fn prepare_work_session(
@@ -103,63 +177,67 @@ pub fn prepare_work_session(
 }
 
 pub fn run_jump(paths: &AppPaths, args: JumpArgs) -> Result<()> {
-    let works = ranked_works(paths)?;
-    if works.is_empty() {
-        bail!(
-            "no works found in {}",
-            paths.display_path(&paths.works_dir())
-        );
+    let targets = ranked_targets(paths)?;
+    if targets.is_empty() {
+        bail!("no works or running tmux sessions found");
     }
 
     if args.json {
-        let rows = works
-            .iter()
-            .map(|(work, live)| RankedWorkRow {
-                work: work.clone(),
-                live: *live,
-                jump_rank: jump_rank(work, *live),
-            })
-            .collect::<Vec<_>>();
+        let rows = targets.iter().map(JumpTarget::to_row).collect::<Vec<_>>();
         println!("{}", serde_json::to_string_pretty(&rows)?);
         return Ok(());
     }
 
     if args.names_only {
-        for (work, _) in &works {
-            println!("{}", work.name);
+        for target in &targets {
+            println!("{}", target.selection_name());
         }
         return Ok(());
     }
 
     let selected = if find_binary("fzf").is_some() {
-        select_with_fzf(&works)?
+        select_with_fzf(&targets)?
     } else {
         eprintln!("fzf not found; using prompt fallback");
-        select_with_prompt(&works)?
+        select_with_prompt(&targets)?
     };
     if let Some(selected) = selected {
-        open_work_by_name(paths, &selected)?;
+        open_target_by_name(paths, &selected)?;
     }
     Ok(())
 }
 
-fn ranked_works(paths: &AppPaths) -> Result<Vec<(Work, bool)>> {
+fn ranked_targets(paths: &AppPaths) -> Result<Vec<JumpTarget>> {
     let live_sessions = tmux::list_sessions()?;
-    let mut works = work::list_works(paths)?
+    let mut targets = work::list_works(paths)?
         .into_iter()
-        .map(|work| {
-            let live = live_sessions.contains(&work.session);
-            (work, live)
+        .map(|work| JumpTarget::Work {
+            live: live_sessions.contains(&work.session),
+            work,
         })
         .collect::<Vec<_>>();
 
-    works.sort_by(|(a, a_live), (b, b_live)| {
-        jump_rank(a, *a_live)
-            .cmp(&jump_rank(b, *b_live))
-            .then_with(|| b.last_opened_at.cmp(&a.last_opened_at))
-            .then_with(|| a.name.cmp(&b.name))
+    for session in live_sessions {
+        if targets.iter().any(|target| target.session_name() == session) {
+            continue;
+        }
+        targets.push(JumpTarget::LiveSession { session });
+    }
+
+    targets.sort_by(|a, b| {
+        a.jump_rank()
+            .cmp(&b.jump_rank())
+            .then_with(|| match (a, b) {
+                (JumpTarget::Work { work: a_work, .. }, JumpTarget::Work { work: b_work, .. }) => {
+                    b_work
+                        .last_opened_at
+                        .cmp(&a_work.last_opened_at)
+                        .then_with(|| a_work.name.cmp(&b_work.name))
+                }
+                _ => a.selection_name().cmp(b.selection_name()),
+            })
     });
-    Ok(works)
+    Ok(targets)
 }
 
 fn jump_rank(work: &Work, live: bool) -> u8 {
@@ -174,7 +252,7 @@ fn jump_rank(work: &Work, live: bool) -> u8 {
     }
 }
 
-fn select_with_fzf(works: &[(Work, bool)]) -> Result<Option<String>> {
+fn select_with_fzf(targets: &[JumpTarget]) -> Result<Option<String>> {
     let mut child = Command::new("fzf")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -183,8 +261,8 @@ fn select_with_fzf(works: &[(Work, bool)]) -> Result<Option<String>> {
 
     {
         let mut stdin = child.stdin.take().context("failed to open fzf stdin")?;
-        for (work, live) in works {
-            writeln!(stdin, "{}", output::format_jump_row(work, *live))
+        for target in targets {
+            writeln!(stdin, "{}", output::format_jump_row(target))
                 .context("failed to write work list to fzf")?;
         }
     }
@@ -206,9 +284,9 @@ fn select_with_fzf(works: &[(Work, bool)]) -> Result<Option<String>> {
         .map(str::to_string))
 }
 
-fn select_with_prompt(works: &[(Work, bool)]) -> Result<Option<String>> {
-    for (idx, (work, live)) in works.iter().enumerate() {
-        println!("{:>3}\t{}", idx + 1, output::format_jump_row(work, *live));
+fn select_with_prompt(targets: &[JumpTarget]) -> Result<Option<String>> {
+    for (idx, target) in targets.iter().enumerate() {
+        println!("{:>3}\t{}", idx + 1, output::format_jump_row(target));
     }
     print!("select work: ");
     io::stdout().flush().context("failed to flush stdout")?;
@@ -225,12 +303,12 @@ fn select_with_prompt(works: &[(Work, bool)]) -> Result<Option<String>> {
         if number == 0 {
             bail!("selection 0 is out of range");
         }
-        return works
+        return targets
             .get(number - 1)
-            .map(|(work, _)| Some(work.name.clone()))
+            .map(|target| Some(target.selection_name().to_string()))
             .with_context(|| format!("selection {} is out of range", number));
     }
-    if works.iter().any(|(work, _)| work.name == input) {
+    if targets.iter().any(|target| target.selection_name() == input) {
         return Ok(Some(input.to_string()));
     }
     bail!("unknown work '{}'", input)
