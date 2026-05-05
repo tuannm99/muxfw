@@ -218,7 +218,10 @@ fn ranked_targets(paths: &AppPaths) -> Result<Vec<JumpTarget>> {
         .collect::<Vec<_>>();
 
     for session in live_sessions {
-        if targets.iter().any(|target| target.session_name() == session) {
+        if targets
+            .iter()
+            .any(|target| target.session_name() == session)
+        {
             continue;
         }
         targets.push(JumpTarget::LiveSession { session });
@@ -308,7 +311,10 @@ fn select_with_prompt(targets: &[JumpTarget]) -> Result<Option<String>> {
             .map(|target| Some(target.selection_name().to_string()))
             .with_context(|| format!("selection {} is out of range", number));
     }
-    if targets.iter().any(|target| target.selection_name() == input) {
+    if targets
+        .iter()
+        .any(|target| target.selection_name() == input)
+    {
         return Ok(Some(input.to_string()));
     }
     bail!("unknown work '{}'", input)

@@ -172,10 +172,10 @@ mw ws list
 mw ws list --names-only
 mw ws list --json
 mw ws open <name>
-mw ws create <name> --work <work> [--work <work> ...]
-mw ws update <name> --work <work> [--work <work> ...]
-mw ws add <name> --work <work> [--work <work> ...]
-mw ws remove <name> --work <work> [--work <work> ...]
+mw ws create <name> [--work <work> ...] [--from-dir <dir>]
+mw ws update <name> [--work <work> ...] [--from-dir <dir>]
+mw ws add <name> [--work <work> ...] [--from-dir <dir>]
+mw ws remove <name> [--work <work> ...] [--from-dir <dir>]
 mw ws edit <name>
 mw ws delete <name>
 ```
@@ -285,6 +285,8 @@ works:
 ```
 
 `mw ws open demo-suite` prepares each listed work in order using the same open path, updates `last_opened_at`, and then attaches or switches to the first work's tmux session. `mw workspace ...` remains available as the long form.
+
+`--from-dir <dir>` scans only the direct child directories of `<dir>`, creates missing work files from those folders, sanitizes folder names into work names, and uses that ordered list in the workspace. Nested grandchildren are ignored.
 
 ## Neovim
 

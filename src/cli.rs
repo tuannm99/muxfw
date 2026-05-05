@@ -232,8 +232,12 @@ pub struct CreateWorkspaceArgs {
     pub name: String,
 
     /// Work names included in the workspace; can be passed multiple times.
-    #[arg(long = "work", required = true)]
+    #[arg(long = "work")]
     pub works: Vec<String>,
+
+    /// Add one work per direct subdirectory in this directory.
+    #[arg(long)]
+    pub from_dir: Option<String>,
 
     /// Optional workspace profile label such as daily, release, or incident.
     #[arg(long)]
@@ -254,8 +258,12 @@ pub struct UpdateWorkspaceArgs {
     pub name: String,
 
     /// Full replacement work list; can be passed multiple times.
-    #[arg(long = "work", required = true)]
+    #[arg(long = "work")]
     pub works: Vec<String>,
+
+    /// Replace from one work per direct subdirectory in this directory.
+    #[arg(long)]
+    pub from_dir: Option<String>,
 
     /// Set or replace the workspace profile label.
     #[arg(long)]
@@ -276,8 +284,12 @@ pub struct WorkspaceMembersArgs {
     pub name: String,
 
     /// Work names to add or remove; can be passed multiple times.
-    #[arg(long = "work", required = true)]
+    #[arg(long = "work")]
     pub works: Vec<String>,
+
+    /// Resolve member works from the direct subdirectories of this directory.
+    #[arg(long)]
+    pub from_dir: Option<String>,
 }
 
 // Args for `work create`.

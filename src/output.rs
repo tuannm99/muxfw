@@ -59,7 +59,14 @@ pub fn format_jump_row(target: &crate::commands::open::JumpTarget) -> String {
             let description = work.description.as_deref().unwrap_or("-");
             format!(
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                work.name, work.session, tracked, favorite, live, group, last_opened_at, description
+                work.name,
+                work.session,
+                tracked,
+                favorite,
+                live,
+                group,
+                last_opened_at,
+                description
             )
         }
         crate::commands::open::JumpTarget::LiveSession { session } => {

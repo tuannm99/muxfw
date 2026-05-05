@@ -108,7 +108,11 @@ fn import_session_creates_work_and_snapshot_from_named_tmux_session() {
 
     let current_path = std::env::var("PATH").unwrap_or_default();
     let path = format!("{}:{}", fake_bin_dir.display(), current_path);
-    let output = run_with_path(&home, &path, &["work", "import-session", "adhoc", "--name", "adhoc-work"]);
+    let output = run_with_path(
+        &home,
+        &path,
+        &["work", "import-session", "adhoc", "--name", "adhoc-work"],
+    );
 
     assert!(
         output.status.success(),

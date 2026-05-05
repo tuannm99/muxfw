@@ -304,8 +304,11 @@ fn create_work_from_session(
 ) -> Result<bool> {
     let snapshot = tmux::capture_session(session)
         .with_context(|| format!("failed to capture tmux session '{}'", session))?;
-    let work = crate::discover::work_from_snapshot(&snapshot, name_override, root_override, metadata)
-        .with_context(|| format!("failed to generate work config from session '{}'", session))?;
+    let work =
+        crate::discover::work_from_snapshot(&snapshot, name_override, root_override, metadata)
+            .with_context(|| {
+                format!("failed to generate work config from session '{}'", session)
+            })?;
     create_discovered_work(paths, work, &snapshot, edit, overwrite)
 }
 
