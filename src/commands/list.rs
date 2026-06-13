@@ -132,13 +132,7 @@ fn filtered_works(paths: &AppPaths, args: &ListArgs) -> Result<Vec<Work>> {
         works.retain(|work| live_sessions.contains(&work.session));
     }
 
-    if args.recent {
-        works.sort_by(|a, b| {
-            b.last_opened_at
-                .cmp(&a.last_opened_at)
-                .then_with(|| a.name.cmp(&b.name))
-        });
-    }
+    work::sort_by_priority(&mut works);
 
     Ok(works)
 }

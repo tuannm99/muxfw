@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -269,6 +270,18 @@ pub fn list_works(paths: &AppPaths) -> Result<Vec<Work>> {
     }
     works.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(works)
+}
+
+pub(crate) fn compare_by_priority(a: &Work, b: &Work) -> Ordering {
+    b.favorite
+        .cmp(&a.favorite)
+        .then_with(|| b.open_count.cmp(&a.open_count))
+        .then_with(|| b.last_opened_at.cmp(&a.last_opened_at))
+        .then_with(|| a.name.cmp(&b.name))
+}
+
+pub(crate) fn sort_by_priority(works: &mut [Work]) {
+    works.sort_by(compare_by_priority);
 }
 
 pub fn work_files(paths: &AppPaths) -> Result<Vec<PathBuf>> {

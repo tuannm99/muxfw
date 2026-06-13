@@ -114,6 +114,93 @@ fn jump_json_includes_untracked_live_tmux_sessions() {
 }
 
 #[test]
+fn jump_names_only_orders_work_by_priority() {
+    let home = temp_home("jump-priority");
+    let works_dir = home.join(".muxwf/works");
+    fs::create_dir_all(&works_dir).unwrap();
+
+    fs::write(
+        works_dir.join("cold.yaml"),
+        "\
+name: cold
+session: cold
+root: /tmp
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+",
+    )
+    .unwrap();
+    fs::write(
+        works_dir.join("recent.yaml"),
+        "\
+name: recent
+session: recent
+root: /tmp
+open_count: 2
+last_opened_at: 2026-03-01T00:00:00Z
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+",
+    )
+    .unwrap();
+    fs::write(
+        works_dir.join("frequent.yaml"),
+        "\
+name: frequent
+session: frequent
+root: /tmp
+open_count: 9
+last_opened_at: 2026-02-01T00:00:00Z
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+",
+    )
+    .unwrap();
+    fs::write(
+        works_dir.join("favorite.yaml"),
+        "\
+name: favorite
+session: favorite
+root: /tmp
+favorite: true
+open_count: 1
+last_opened_at: 2026-01-01T00:00:00Z
+created_at: 2026-01-01T00:00:00Z
+updated_at: 2026-01-01T00:00:00Z
+",
+    )
+    .unwrap();
+
+    let fake_bin_dir = home.join("bin");
+    fs::create_dir_all(&fake_bin_dir).unwrap();
+    let tmux_script = fake_bin_dir.join("tmux");
+    fs::write(
+        &tmux_script,
+        "#!/bin/sh\nif [ \"$1\" = \"list-sessions\" ]; then\n  exit 0\nfi\nexit 1\n",
+    )
+    .unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&tmux_script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&tmux_script, perms).unwrap();
+    }
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let path = format!("{}:{}", fake_bin_dir.display(), current_path);
+    let output = run_with_path(&home, &path, &["jump", "--names-only"]);
+    assert!(output.status.success(), "stderr:\n{}", stderr(&output));
+    assert_eq!(
+        stdout(&output).lines().collect::<Vec<_>>(),
+        vec!["favorite", "frequent", "recent", "cold"]
+    );
+
+    cleanup_home(home);
+}
+
+#[test]
 fn open_without_name_shows_ranked_prompt_and_accepts_selection() {
     let home = temp_home("open-no-name");
     let fake_bin_dir = home.join("bin");

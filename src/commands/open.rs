@@ -17,7 +17,7 @@ enum JumpTargetRow {
     Work {
         tracked: bool,
         #[serde(flatten)]
-        work: Work,
+        work: Box<Work>,
         live: bool,
         jump_rank: u8,
     },
@@ -32,7 +32,7 @@ enum JumpTargetRow {
 
 #[derive(Debug, Clone)]
 pub(crate) enum JumpTarget {
-    Work { work: Work, live: bool },
+    Work { work: Box<Work>, live: bool },
     LiveSession { session: String },
 }
 
@@ -213,7 +213,7 @@ fn ranked_targets(paths: &AppPaths) -> Result<Vec<JumpTarget>> {
         .into_iter()
         .map(|work| JumpTarget::Work {
             live: live_sessions.contains(&work.session),
-            work,
+            work: Box::new(work),
         })
         .collect::<Vec<_>>();
 
@@ -232,10 +232,7 @@ fn ranked_targets(paths: &AppPaths) -> Result<Vec<JumpTarget>> {
             .cmp(&b.jump_rank())
             .then_with(|| match (a, b) {
                 (JumpTarget::Work { work: a_work, .. }, JumpTarget::Work { work: b_work, .. }) => {
-                    b_work
-                        .last_opened_at
-                        .cmp(&a_work.last_opened_at)
-                        .then_with(|| a_work.name.cmp(&b_work.name))
+                    work::compare_by_priority(a_work, b_work)
                 }
                 _ => a.selection_name().cmp(b.selection_name()),
             })

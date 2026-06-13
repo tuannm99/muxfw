@@ -240,7 +240,8 @@ fn hook_for<'a>(work: &'a Work, rules: &'a Ruleset, cwd: &str) -> Option<&'a str
 }
 
 fn restore_command(cwd: &str, hook: Option<&str>) -> String {
-    let mut command = format!("cd -- {}", shell_quote(cwd));
+    let quoted_cwd = shell_quote(cwd);
+    let mut command = format!("{{ [ \"$PWD\" = {quoted_cwd} ] || cd -- {quoted_cwd}; }}");
     if let Some(hook) = hook {
         command.push_str(" && ");
         command.push_str(hook.trim());
@@ -250,4 +251,25 @@ fn restore_command(cwd: &str, hook: Option<&str>) -> String {
 
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restore_command_only_changes_directory_when_needed() {
+        assert_eq!(
+            restore_command("/tmp/project", None),
+            "{ [ \"$PWD\" = '/tmp/project' ] || cd -- '/tmp/project'; }"
+        );
+    }
+
+    #[test]
+    fn restore_command_runs_hook_after_directory_check() {
+        assert_eq!(
+            restore_command("/tmp/it's here", Some("cargo check")),
+            "{ [ \"$PWD\" = '/tmp/it'\"'\"'s here' ] || cd -- '/tmp/it'\"'\"'s here'; } && cargo check"
+        );
+    }
 }

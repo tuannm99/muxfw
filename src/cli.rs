@@ -144,7 +144,7 @@ pub struct ListArgs {
     #[arg(long, value_enum)]
     pub status: Option<WorkStatus>,
 
-    /// Only include works with last_opened_at, sorted newest first.
+    /// Only include works with last_opened_at.
     #[arg(long)]
     pub recent: bool,
 
