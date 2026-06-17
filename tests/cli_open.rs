@@ -59,7 +59,7 @@ fn jump_json_returns_ranked_work_rows() {
     assert!(out.contains("\"name\": \"api\""));
     assert!(out.contains("\"kind\": \"work\""));
     assert!(out.contains("\"tracked\": true"));
-    assert!(out.contains("\"jump_rank\": 0"));
+    assert!(out.contains("\"jump_rank\": 1"));
     assert!(out.contains("\"live\": false"));
 
     cleanup_home(home);
@@ -194,7 +194,7 @@ updated_at: 2026-01-01T00:00:00Z
     assert!(output.status.success(), "stderr:\n{}", stderr(&output));
     assert_eq!(
         stdout(&output).lines().collect::<Vec<_>>(),
-        vec!["favorite", "frequent", "recent", "cold"]
+        vec!["recent", "frequent", "favorite", "cold"]
     );
 
     cleanup_home(home);

@@ -241,9 +241,9 @@ fn ranked_targets(paths: &AppPaths) -> Result<Vec<JumpTarget>> {
 }
 
 fn jump_rank(work: &Work, live: bool) -> u8 {
-    if work.favorite {
+    if work.last_opened_at.is_some() {
         0
-    } else if work.last_opened_at.is_some() {
+    } else if work.favorite {
         1
     } else if live {
         2

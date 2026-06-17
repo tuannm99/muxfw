@@ -4,7 +4,7 @@ use common::{cleanup_home, run, stderr, stdout, temp_home};
 use std::fs;
 
 #[test]
-fn list_orders_by_favorite_usage_recency_then_name() {
+fn list_orders_by_recency_favorite_usage_then_name() {
     let home = temp_home("list-priority");
     let works_dir = home.join(".muxwf/works");
     fs::create_dir_all(&works_dir).unwrap();
@@ -65,7 +65,7 @@ updated_at: 2026-01-01T00:00:00Z
     assert!(output.status.success(), "stderr:\n{}", stderr(&output));
     assert_eq!(
         stdout(&output).lines().collect::<Vec<_>>(),
-        vec!["favorite", "frequent", "recent", "cold"]
+        vec!["recent", "frequent", "favorite", "cold"]
     );
 
     cleanup_home(home);

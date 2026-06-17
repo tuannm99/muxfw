@@ -161,7 +161,7 @@ mw close <work>         # kill the tmux session, keeping the snapshot
 mw current              # print the work for the current tmux session
 mw pin <work>           # mark favorite
 mw unpin <work>         # remove favorite
-mw recent               # list works with last_opened_at using priority order
+mw recent               # list works with last_opened_at, newest first
 mw show <work>          # print snapshot JSON
 mw doctor               # validate tmux, configs, snapshots, plugins
 mw version              # print CLI version
@@ -271,7 +271,7 @@ mw list --live
 mw list --json
 ```
 
-`mw list` applies filters first, then orders works by favorite, open count, last opened time, and name. `mw open` without a work name uses the same work priority, while still placing live tmux sessions ahead of works that have never been opened. Running tmux sessions that do not have a work config yet are included as untracked live sessions. Selecting one of those entries switches directly to that tmux session instead of restoring a managed work. It uses `fzf` when available and falls back to a numbered prompt when `fzf` is missing. `mw jump` remains as a compatibility alias.
+`mw list` applies filters first, then orders works by last opened time, favorite, open count, and name. `mw open` without a work name uses the same work priority, while still placing live tmux sessions ahead of works that have never been opened. Running tmux sessions that do not have a work config yet are included as untracked live sessions. Selecting one of those entries switches directly to that tmux session instead of restoring a managed work. It uses `fzf` when available and falls back to a numbered prompt when `fzf` is missing. `mw jump` remains as a compatibility alias.
 
 ## Workspace Bundles
 

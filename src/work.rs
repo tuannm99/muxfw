@@ -273,10 +273,10 @@ pub fn list_works(paths: &AppPaths) -> Result<Vec<Work>> {
 }
 
 pub(crate) fn compare_by_priority(a: &Work, b: &Work) -> Ordering {
-    b.favorite
-        .cmp(&a.favorite)
+    b.last_opened_at
+        .cmp(&a.last_opened_at)
+        .then_with(|| b.favorite.cmp(&a.favorite))
         .then_with(|| b.open_count.cmp(&a.open_count))
-        .then_with(|| b.last_opened_at.cmp(&a.last_opened_at))
         .then_with(|| a.name.cmp(&b.name))
 }
 
